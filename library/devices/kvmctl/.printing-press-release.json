@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "slug": "kvmctl",
+  "cli_name": "kvmctl-pp-cli",
+  "version": "2026.9.1",
+  "released_at": "2026-09-01T09:16:12Z",
+  "source_commit": "fbc990bd1b830fda6d0a06848f88890a5eedfe9b",
+  "printing_press_version": "4.31.3",
+  "run_id": "20260831-161927",
+  "changes": [
+    {
+      "title": "feat(kvmctl): add kvmctl",
+      "pr": 1895,
+      "url": "https://github.com/mvanhorn/printing-press-library/pull/1895",
+      "commit": "fbc990bd1b830fda6d0a06848f88890a5eedfe9b"
+    }
+  ]
+}
