@@ -11277,6 +11277,60 @@
       }
     },
     {
+      "name": "hostex",
+      "category": "travel",
+      "api": "Hostex",
+      "description": "Every Hostex v3 operation, plus a local SQLite mirror that answers cross-property questions no single Hostex call can — occupancy gaps, revenue rollups, and guest-message SLA, offline.",
+      "search_terms": [
+        "hostex",
+        "hostex-pp-cli",
+        "Every Hostex v3 operation, plus a local SQLite mirror that answers cross-property questions no single Hostex call can — occupancy gaps, revenue rollups, and guest-message SLA, offline.",
+        "Operations gap finder",
+        "ops-gaps",
+        "Find imminent or occupied stays with no cleaning task or missing check-in details.",
+        "Stay brief dossier",
+        "stay-brief",
+        "One dossier for a single stay: reservation, guest, thread state, tasks, transactions, and review.",
+        "Inbox SLA triage",
+        "inbox-sla",
+        "Rank open guest conversations by age since the last guest message and flag threads past your SLA.",
+        "Automation preview",
+        "automation-preview",
+        "List pending automated messages and reviews and flag any whose thread a human has already handled.",
+        "Cross-channel price parity",
+        "price-parity",
+        "Flag property-dates where per-channel listing price or min-stay diverges across channels.",
+        "Oversell / double-sell watch",
+        "oversell-watch",
+        "Flag dates a channel still shows bookable on a property that is blocked or booked on the master calendar.",
+        "Revenue rollup",
+        "revenue-rollup",
+        "Net income minus expense by property or month over a date range, from the live ledger."
+      ],
+      "path": "library/travel/hostex",
+      "printer": "Bust011r",
+      "printer_name": "Bust011r",
+      "creator": {
+        "handle": "Bust011r",
+        "name": "Bust011r"
+      },
+      "mcp": {
+        "binary": "hostex-pp-mcp",
+        "transports": [
+          "stdio",
+          "http"
+        ],
+        "tool_count": 86,
+        "public_tool_count": 0,
+        "auth_type": "api_key",
+        "env_vars": [
+          "HOSTEX_HOSTEX_ACCESS_TOKEN"
+        ],
+        "mcp_ready": "full",
+        "spec_format": "openapi3"
+      }
+    },
+    {
       "name": "hotel-goat",
       "category": "travel",
       "api": "Hotel GOAT",
