@@ -1582,9 +1582,9 @@
       "path": "library/food-and-dining/anylist",
       "release": {
         "cli_name": "anylist-pp-cli",
-        "version": "2026.8.4",
-        "released_at": "2026-08-28T09:32:36Z",
-        "source_commit": "00a18551788f440b6276456889156fba7c41a5d4"
+        "version": "2026.8.5",
+        "released_at": "2026-08-31T09:20:27Z",
+        "source_commit": "bb0fd4ce648317f97e2c9cfb56b31e98d90bc8db"
       },
       "printer": "jeeves",
       "printer_name": "Jeeves",
@@ -23899,9 +23899,9 @@
       "path": "library/media-and-entertainment/tella",
       "release": {
         "cli_name": "tella-pp-cli",
-        "version": "2026.8.1",
-        "released_at": "2026-08-17T07:57:07Z",
-        "source_commit": "40363ac0936c4f406625f8399d8ad9b57673170e"
+        "version": "2026.9.1",
+        "released_at": "2026-09-01T09:06:13Z",
+        "source_commit": "bae6a5a7367da96c7910fc5b6fd321ff0ad834fa"
       },
       "printer": "gregce",
       "printer_name": "Greg Ceccarelli",
@@ -24166,7 +24166,7 @@
         "Cancel a waitlist request. The upstream body requires waitlistRequestId as a JSON number (string flags 400); siteId is the store extref.",
         "Sniffed waitlist check-in",
         "texasroadhouse checkin",
-        "Confirm arrival after the guest receives the Texas Roadhouse text and replies HERE via sniffed POST /waitlist/{extref}/checkin (no public API).",
+        "Mark the party HERE after the guest texts HERE once everyone has arrived (REMOVE to leave) via sniffed POST /waitlist/{extref}/checkin. Not a host-stand visit.",
         "Quote MinQuote lookup",
         "texasroadhouse get-quote",
         "Read per-party-size MinQuote/MaxQuote for a store extref so submit can send the required WaitMinutes.",
@@ -24193,8 +24193,8 @@
           "stdio",
           "http"
         ],
-        "tool_count": 9,
-        "public_tool_count": 9,
+        "tool_count": 8,
+        "public_tool_count": 8,
         "auth_type": "none",
         "env_vars": [
           "PRINTING_PRESS_CLIENT_PROFILE"
