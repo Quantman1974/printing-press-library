@@ -2,17 +2,17 @@
   "schema_version": 1,
   "slug": "flight-goat",
   "cli_name": "flight-goat-pp-cli",
-  "version": "2026.8.5",
-  "released_at": "2026-08-31T09:18:27Z",
-  "source_commit": "8e2e95ef4ff79a8412653a2e621c852cf3bd54dc",
+  "version": "2026.9.1",
+  "released_at": "2026-09-01T09:08:43Z",
+  "source_commit": "2302f3f8c7985e3a2f5a50ebfc66af28f8a05ccf",
   "printing_press_version": "4.28.0",
   "run_id": "20260712-220852",
   "changes": [
     {
-      "title": "feat(flight-goat): add independent return-leg time window",
-      "pr": 1880,
-      "url": "https://github.com/mvanhorn/printing-press-library/pull/1880",
-      "commit": "8e2e95ef4ff79a8412653a2e621c852cf3bd54dc"
+      "title": "feat(flight-goat): round-trip return-leg selection and cheapest-dates fix",
+      "pr": 1888,
+      "url": "https://github.com/mvanhorn/printing-press-library/pull/1888",
+      "commit": "2302f3f8c7985e3a2f5a50ebfc66af28f8a05ccf"
     }
   ]
 }

@@ -2,6 +2,10 @@
 
 This file is maintained by printing-press-library release automation. Do not hand-edit release sections in normal PRs.
 
+## 2026.9.1 - 2026-09-01
+
+- feat(flight-goat): round-trip return-leg selection and cheapest-dates fix (#1888).
+
 ## 2026.8.5 - 2026-08-31
 
 - feat(flight-goat): add independent return-leg time window (#1880).

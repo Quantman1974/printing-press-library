@@ -2,6 +2,10 @@
 
 This file is maintained by printing-press-library release automation. Do not hand-edit release sections in normal PRs.
 
+## 2026.9.1 - 2026-09-01
+
+- fix(google-search-console): URL-encode sitemap feedpath (#1890).
+
 ## 2026.8.2 - 2026-08-17
 
 - fix(cli): accept bare GSC search dimensions (#1738).
