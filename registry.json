@@ -6803,6 +6803,12 @@
         "Itemized chronological mutation rows for one ledger account with a computed running balance."
       ],
       "path": "library/payments/e-boekhouden",
+      "release": {
+        "cli_name": "e-boekhouden-pp-cli",
+        "version": "2026.9.1",
+        "released_at": "2026-09-01T09:10:07Z",
+        "source_commit": "0aa8d94e3fc7410d83eb6a6ef051be1abc7e2f61"
+      },
       "printer": "markvandeven",
       "printer_name": "markvandeven"
     },
@@ -8504,9 +8510,9 @@
       "path": "library/travel/flight-goat",
       "release": {
         "cli_name": "flight-goat-pp-cli",
-        "version": "2026.8.5",
-        "released_at": "2026-08-31T09:18:27Z",
-        "source_commit": "8e2e95ef4ff79a8412653a2e621c852cf3bd54dc"
+        "version": "2026.9.1",
+        "released_at": "2026-09-01T09:08:43Z",
+        "source_commit": "2302f3f8c7985e3a2f5a50ebfc66af28f8a05ccf"
       },
       "printer": "mvanhorn",
       "printer_name": "Matt Van Horn",
@@ -8601,6 +8607,60 @@
         "tool_count": 5,
         "public_tool_count": 0,
         "auth_type": "none",
+        "env_vars": [
+          "PRINTING_PRESS_CLIENT_PROFILE"
+        ],
+        "mcp_ready": "full",
+        "spec_format": "internal"
+      }
+    },
+    {
+      "name": "flow",
+      "category": "media-and-entertainment",
+      "api": "Google Flow",
+      "description": "Everything Flow's community CLIs and MCP servers do, plus the two things none of them do: real Google Drive ingestion and an honest audio-drama pipeline that closes the loop Flow itself cannot.",
+      "search_terms": [
+        "flow",
+        "Google Flow",
+        "flow-pp-cli",
+        "Everything Flow's community CLIs and MCP servers do, plus the two things none of them do: real Google Drive ingestion and an honest audio-drama pipeline that closes the loop Flow itself cannot.",
+        "Beat-to-prompt drafter",
+        "script draft-prompts",
+        "Turn a Scribe recap-script JSON into a ready-to-approve queue of per-segment Flow prompts, each matched to the right seed image automatically.",
+        "Episode import",
+        "Pull a whole episode's assets from two separate Google Drive folders -- Scribe's session output and the images folder -- into a Flow project and draft the prompt queue, in one command.",
+        "Audio mux-back",
+        "mux",
+        "Lay your real audio-drama mp3 back over the rendered Flow clips, in the right order and at the right offsets, with one local command.",
+        "Queue credit-affordability check",
+        "queue estimate",
+        "See whether a prepared batch of generations fits your remaining Flow credits before you spend a single one.",
+        "Drive import scene auto-tagging",
+        "drive import",
+        "Pull seed images straight out of a local Google Drive folder into a Flow project, with character tags inferred automatically from filenames (requires --project for character names).",
+        "Batch aggregate status watch",
+        "video watch",
+        "Check on an entire submitted batch of generations with one command instead of clicking through each one.",
+        "Scene/character/asset gap check",
+        "scenes gaps",
+        "Find characters missing a reference image and see a media-status breakdown for a project, before you submit a batch."
+      ],
+      "path": "library/media-and-entertainment/flow",
+      "printer": "wryenmeek",
+      "printer_name": "github-actionsbot",
+      "creator": {
+        "handle": "wryenmeek",
+        "name": "github-actionsbot"
+      },
+      "mcp": {
+        "binary": "flow-pp-mcp",
+        "transports": [
+          "stdio",
+          "http"
+        ],
+        "tool_count": 5,
+        "public_tool_count": 0,
+        "auth_type": "session_handshake",
         "env_vars": [
           "PRINTING_PRESS_CLIENT_PROFILE"
         ],
@@ -10281,9 +10341,9 @@
       "path": "library/marketing/google-search-console",
       "release": {
         "cli_name": "google-search-console-pp-cli",
-        "version": "2026.8.2",
-        "released_at": "2026-08-17T08:06:59Z",
-        "source_commit": "e3c649d26a0a3972dd1d41a44487d17227a0ddb5"
+        "version": "2026.9.1",
+        "released_at": "2026-09-01T09:08:43Z",
+        "source_commit": "09276b5c23d2e79e8e4efc403d6ca3aac95157a5"
       },
       "printer": "bossriceshark",
       "printer_name": "Matt",
@@ -13104,15 +13164,55 @@
       "path": "library/monitoring/kuma",
       "release": {
         "cli_name": "kuma-pp-cli",
-        "version": "2026.8.1",
-        "released_at": "2026-08-28T09:31:02Z",
-        "source_commit": "00d100d4448ee37c769539c14082314b6c697b69"
+        "version": "2026.9.1",
+        "released_at": "2026-09-01T09:10:07Z",
+        "source_commit": "78c5c4c057194cbb2ae266b188a7859c442ec05b"
       },
       "printer": "keithah",
       "printer_name": "Keith",
       "creator": {
         "handle": "keithah",
         "name": "Keith"
+      }
+    },
+    {
+      "name": "kvmctl",
+      "category": "devices",
+      "api": "Kvmd Compatible Kvm",
+      "description": "The verified REST subset used by kvmctl for KVMD-compatible GLKVM devices.",
+      "search_terms": [
+        "kvmctl",
+        "Kvmd Compatible Kvm",
+        "kvmctl-pp-cli",
+        "The verified REST subset used by kvmctl for KVMD-compatible GLKVM devices.",
+        "Structured semantic dispatch",
+        "semantic capabilities",
+        "Expose named KVMD operations through stable evidence envelopes with explicit read/write policy.",
+        "Target-bound workflows",
+        "workflow-list",
+        "List immutable named KVM workflows in deterministic order."
+      ],
+      "path": "library/devices/kvmctl",
+      "printer": "keithah",
+      "printer_name": "Keith Herrington",
+      "creator": {
+        "handle": "keithah",
+        "name": "Keith"
+      },
+      "mcp": {
+        "binary": "kvmctl-pp-mcp",
+        "transports": [
+          "stdio",
+          "http"
+        ],
+        "tool_count": 14,
+        "public_tool_count": 1,
+        "auth_type": "api_key",
+        "env_vars": [
+          "KVMCTL_KVMD_TOKEN"
+        ],
+        "mcp_ready": "full",
+        "spec_format": "openapi3"
       }
     },
     {
@@ -24207,9 +24307,9 @@
       "path": "library/food-and-dining/texas-roadhouse",
       "release": {
         "cli_name": "texas-roadhouse-pp-cli",
-        "version": "2026.8.2",
-        "released_at": "2026-08-31T09:12:40Z",
-        "source_commit": "6695fc0c66c9f1a5670c049428bd79752e231751"
+        "version": "2026.9.1",
+        "released_at": "2026-09-01T09:08:43Z",
+        "source_commit": "aa6dbc822a5be5996de19120c05f2cea76b11299"
       },
       "printer": "DashLabsDev",
       "printer_name": "Thomas McCormick",
