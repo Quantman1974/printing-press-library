@@ -167,7 +167,7 @@ func runGeneration(ctx context.Context, c *client.Client, prompt string, s genSe
 	// call inside still carries the client's per-request timeout.
 	pollCtx, cancelPoll := context.WithTimeout(ctx, timeout)
 	defer cancelPoll()
-	designs, err := pollForNewDesigns(pollCtx, c, afterID, quantity, timeout, progress)
+	designs, err := pollForNewDesigns(pollCtx, c, afterID, quantity, timeout, progress, prompt)
 	if err != nil && len(designs) == 0 {
 		return nil, err
 	}

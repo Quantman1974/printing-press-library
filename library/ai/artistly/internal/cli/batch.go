@@ -92,15 +92,32 @@ download already-finished images use 'export'.`),
 			results := make([]batchResult, 0, len(prompts))
 			submitted := 0
 			failures := 0
+			quantity := settings.Quantity
+			if quantity <= 0 {
+				quantity = 1
+			}
+			progress := progressWriter(cmd, flags)
 			for i, p := range prompts {
-				if i > 0 {
-					select { // pace submissions, but stay responsive to cancellation
+				if i > 0 && !wait {
+					// Let dashboard props reflect the previous queue before the
+					// next concurrent/daily check. --wait already observed completion.
+					select {
 					case <-ctx.Done():
 						return ctx.Err()
 					case <-time.After(time.Second):
 					}
 				}
-				designs, gerr := runGeneration(ctx, c, p, settings, wait, download, waitTimeout, progressWriter(cmd, flags))
+				if paceErr := waitForQuotaCapacity(ctx, c, quantity, progress); paceErr != nil {
+					if ctx.Err() != nil {
+						return ctx.Err()
+					}
+					for j := i; j < len(prompts); j++ {
+						results = append(results, batchResult{Prompt: prompts[j], Error: paceErr.Error()})
+						failures++
+					}
+					break
+				}
+				designs, gerr := runGeneration(ctx, c, p, settings, wait, download, waitTimeout, progress)
 				r := batchResult{Prompt: p, Rendered: len(designs)}
 				if gerr != nil {
 					r.Error = gerr.Error()

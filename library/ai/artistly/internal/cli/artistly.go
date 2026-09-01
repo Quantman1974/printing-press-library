@@ -22,6 +22,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -295,30 +296,29 @@ func submitGeneration(ctx context.Context, c *client.Client, tool string, body m
 	return fmt.Errorf("generation request returned HTTP %d", status)
 }
 
-// pollForNewDesigns polls /fetch-personal-designs until `want` designs with an
-// ID greater than afterID have finished, or the timeout elapses. Returns the
-// finished designs (may be fewer than `want` on timeout).
-func pollForNewDesigns(ctx context.Context, c *client.Client, afterID, want int, timeout time.Duration, progress io.Writer) ([]Design, error) {
+// pollForNewDesigns polls /fetch-personal-designs until `want` designs that
+// belong to this submission have finished, or the timeout elapses. A design
+// belongs to the submission only when its ID is newer than afterID and its
+// prompt matches the submitted prompt. Once `want` matching candidate IDs have
+// been seen, later same-prompt rows from another session are ignored. Returns
+// the finished designs (may be fewer than `want` on timeout).
+func pollForNewDesigns(ctx context.Context, c *client.Client, afterID, want int, timeout time.Duration, progress io.Writer, prompt string) ([]Design, error) {
 	deadline := time.Now().Add(timeout)
 	delay := 3 * time.Second
 	// Track the most recent successful "done" set so a fetch failure (e.g. the
 	// context deadline firing mid-request) returns the designs already known to
 	// have rendered instead of discarding them.
 	var lastDone []Design
+	tracked := map[int]struct{}{}
 	for {
 		designs, err := fetchPersonalDesigns(ctx, c)
 		if err != nil {
 			return lastDone, err
 		}
-		var done []Design
-		for _, d := range designs {
-			if d.ID > afterID && isDone(d) {
-				done = append(done, d)
-			}
-		}
+		done := correlateSubmission(designs, afterID, prompt, want, tracked)
 		lastDone = done
 		if len(done) >= want {
-			return done, nil
+			return done[:want], nil
 		}
 		if time.Now().After(deadline) {
 			return done, fmt.Errorf("timed out after %s waiting for %d design(s) to render (%d ready)", timeout, want, len(done))
@@ -332,6 +332,50 @@ func pollForNewDesigns(ctx context.Context, c *client.Client, afterID, want int,
 		case <-time.After(delay):
 		}
 	}
+}
+
+// correlateSubmission returns finished designs that belong to this invocation.
+// Matching requires ID > afterID and a prompt match. The first `want` matching
+// IDs (processing or done, lowest ID first) are locked into tracked so a
+// concurrent browser or CLI session finishing another generation is not
+// attributed here.
+func correlateSubmission(designs []Design, afterID int, prompt string, want int, tracked map[int]struct{}) []Design {
+	if want <= 0 {
+		want = 1
+	}
+	if tracked == nil {
+		return nil
+	}
+	wantPrompt := strings.TrimSpace(prompt)
+	var candidates []Design
+	for _, d := range designs {
+		if d.ID <= afterID {
+			continue
+		}
+		if strings.TrimSpace(d.PositivePrompt) != wantPrompt {
+			continue
+		}
+		candidates = append(candidates, d)
+	}
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].ID < candidates[j].ID })
+	if len(tracked) < want {
+		for _, d := range candidates {
+			if len(tracked) >= want {
+				break
+			}
+			tracked[d.ID] = struct{}{}
+		}
+	}
+	var done []Design
+	for _, d := range candidates {
+		if _, ok := tracked[d.ID]; !ok {
+			continue
+		}
+		if isDone(d) {
+			done = append(done, d)
+		}
+	}
+	return done
 }
 
 // maxDesignID returns the highest design ID currently visible, used as the
@@ -550,6 +594,66 @@ func fetchQuota(ctx context.Context, c *client.Client) (quotaInfo, error) {
 	intFromProp(props, "concurrent_generation_limit", &q.ConcurrentLimit)
 	intFromProp(props, "todays_design_count", &q.TodaysCount)
 	return q, nil
+}
+
+// dailyGenerationCap is Artistly's undocumented ~400/day ceiling. Failed
+// generations count. The dashboard exposes today's count but not the ceiling.
+const dailyGenerationCap = 400
+
+type quotaSubmitDecision int
+
+const (
+	quotaSubmitNow quotaSubmitDecision = iota
+	quotaWaitConcurrent
+	quotaDailyExhausted
+)
+
+func decideQuotaSubmit(q quotaInfo, quantity int) quotaSubmitDecision {
+	if quantity <= 0 {
+		quantity = 1
+	}
+	if q.TodaysCount+quantity > dailyGenerationCap {
+		return quotaDailyExhausted
+	}
+	if q.ConcurrentLimit > 0 && q.ConcurrentCount+quantity > q.ConcurrentLimit {
+		return quotaWaitConcurrent
+	}
+	return quotaSubmitNow
+}
+
+// waitForQuotaCapacity consults concurrent slots and remaining daily budget
+// before a batch prompt is submitted. It waits while the concurrent limit is
+// full and refuses to submit once the undocumented daily cap would be exceeded.
+func waitForQuotaCapacity(ctx context.Context, c *client.Client, quantity int, progress io.Writer) error {
+	if quantity <= 0 {
+		quantity = 1
+	}
+	delay := time.Second
+	for {
+		q, err := fetchQuota(ctx, c)
+		if err != nil {
+			return err
+		}
+		switch decideQuotaSubmit(q, quantity) {
+		case quotaSubmitNow:
+			return nil
+		case quotaDailyExhausted:
+			remaining := dailyGenerationCap - q.TodaysCount
+			if remaining < 0 {
+				remaining = 0
+			}
+			return apiErr(fmt.Errorf("daily generation budget exhausted (%d today, ~%d/day cap, %d remaining, need %d)", q.TodaysCount, dailyGenerationCap, remaining, quantity))
+		case quotaWaitConcurrent:
+			if progress != nil {
+				fmt.Fprintf(progress, "  ...waiting for concurrent slot (%d/%d in flight, need %d)\n", q.ConcurrentCount, q.ConcurrentLimit, quantity)
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(delay):
+			}
+		}
+	}
 }
 
 func intFromProp(props map[string]json.RawMessage, key string, dst *int) {

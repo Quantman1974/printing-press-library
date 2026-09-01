@@ -1,0 +1,11 @@
+{
+  "schema_version": 2,
+  "id": "artistly-quota-pace-and-poll-correlate",
+  "applied_at": "2026-09-01",
+  "base_run_id": "20260615-000318-b56125c5",
+  "base_printing_press_version": "4.24.0",
+  "summary": "Batch must consult concurrent slots and remaining daily budget before every submit, and generation polling must correlate finished designs to the submitted prompt and cursor rather than any newer ID.",
+  "reason": "Without --wait, batch slept one second and submitted blindly, exceeding concurrent/daily capacity. Polling treated every completed design above the pre-submit max ID as this invocation, so a concurrent browser or CLI session could be reported or downloaded instead.",
+  "files": ["internal/cli/batch.go", "internal/cli/artistly.go", "internal/cli/generate.go"],
+  "validated_outcome": "Unit tests cover quota submit decisions and prompt/cursor correlation; go test ./internal/cli/ and go build ./... pass."
+}
