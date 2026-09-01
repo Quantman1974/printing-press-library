@@ -1582,9 +1582,9 @@
       "path": "library/food-and-dining/anylist",
       "release": {
         "cli_name": "anylist-pp-cli",
-        "version": "2026.8.5",
-        "released_at": "2026-08-31T09:20:27Z",
-        "source_commit": "bb0fd4ce648317f97e2c9cfb56b31e98d90bc8db"
+        "version": "2026.9.1",
+        "released_at": "2026-09-01T09:07:10Z",
+        "source_commit": "4c3bc306f9f4f4a63f9e6a4ead2f313160cd020f"
       },
       "printer": "jeeves",
       "printer_name": "Jeeves",
@@ -6775,6 +6775,36 @@
         "mcp_ready": "full",
         "spec_format": "openapi3"
       }
+    },
+    {
+      "name": "e-boekhouden",
+      "category": "payments",
+      "api": "e-boekhouden",
+      "description": "Balance, profit & loss, and journal entries for e-Boekhouden from your terminal",
+      "search_terms": [
+        "e-boekhouden",
+        "e-boekhouden-pp-cli",
+        "Administration Safety Banner",
+        "mutation create",
+        "Refuses to actually write a mutation or invoice without --confirm, and blocks an ambiguous write across multiple linked administrations unless --company names the exact target.",
+        "Invoice-Mutation Reconciliation Health",
+        "invoice reconcile",
+        "Lists invoices with no matching payment mutation, and mutations that reference an invoice number the CLI doesn't recognize.",
+        "Mutation Ledger/VAT Suggest",
+        "mutation suggest",
+        "Suggests the ledger and VAT code most often used for past mutations with a similar description.",
+        "Administration Portfolio Overview",
+        "administration overview",
+        "Lists every administration linked to this API token, alongside ledger balances and outstanding invoices for the one administration this session is actually authenticated against.",
+        "Relation Statement",
+        "Full chronological history of invoices and mutations for one relation, with a computed running balance.",
+        "Ledger Drill-Down (T-Account)",
+        "ledger history",
+        "Itemized chronological mutation rows for one ledger account with a computed running balance."
+      ],
+      "path": "library/payments/e-boekhouden",
+      "printer": "markvandeven",
+      "printer_name": "markvandeven"
     },
     {
       "name": "ebay",
@@ -14672,9 +14702,9 @@
       "path": "library/media-and-entertainment/movie-goat",
       "release": {
         "cli_name": "movie-goat-pp-cli",
-        "version": "2026.8.2",
-        "released_at": "2026-08-17T07:57:07Z",
-        "source_commit": "40363ac0936c4f406625f8399d8ad9b57673170e"
+        "version": "2026.9.1",
+        "released_at": "2026-09-01T09:07:10Z",
+        "source_commit": "34f1153694c1bad43dc6dddcdfb98c6831faeee2"
       },
       "printer": "tmchow",
       "printer_name": "Trevin Chow",
