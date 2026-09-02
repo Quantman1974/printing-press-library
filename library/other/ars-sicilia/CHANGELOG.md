@@ -2,6 +2,10 @@
 
 This file is maintained by printing-press-library release automation. Do not hand-edit release sections in normal PRs.
 
+## 2026.9.1 - 2026-09-02
+
+- fix(ars-sicilia): --frase conjunction rewrite + aggregated-laws warning (leftover from #1900) (#1905).
+
 ## 2026.8.10 - 2026-08-31
 
 - fix(ars-sicilia): iter events say where they happened, and a cut ddl search names the way in (#1879).
