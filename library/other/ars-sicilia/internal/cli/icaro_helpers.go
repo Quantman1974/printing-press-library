@@ -143,15 +143,21 @@ func runCerca(cmd *cobra.Command, flags *rootFlags, archiveSlug string, p cercaP
 		// quel caso avvisa; questa era l'unica a non farlo, ed è il percorso
 		// naturale della domanda «quali leggi nell'anno X».
 		hint := hintLeggiCorte(truncated, mancanti, len(recs), len(leggi), p.LimitLeggi)
+		frHint := fraseHint(p.Params)
 		// Questo ramo ha un hint tutto suo e ritorna prima di warnTruncated:
 		// senza il caso esplicito, `leggi cerca --envelope` sarebbe l'unica
-		// ricerca a non avere la busta, e in silenzio.
+		// ricerca a non avere la busta, e in silenzio. fraseHint va incluso
+		// qui: --dry-run e il ramo non aggregato già avvisano, e un --frase
+		// con un alias ISIS non scartabile (meno, no, seguito) altrimenti
+		// consegnerebbe i risultati senza dire che la locuzione è degradata.
 		if envelopeWanted(cmd.OutOrStdout(), flags) {
-			return emitEnvelope(cmd.OutOrStdout(), leggi, truncated, hint, flags)
+			warnPertinenza(frHint)
+			return emitEnvelope(cmd.OutOrStdout(), leggi, truncated, uniscoHint(hint, frHint), flags)
 		}
 		if err := printJSONFiltered(cmd.OutOrStdout(), leggi, flags); err != nil {
 			return err
 		}
+		warnPertinenza(frHint)
 		if hint != "" {
 			fmt.Fprintf(cmd.ErrOrStderr(), "hint: %s\n", hint)
 		}
@@ -168,7 +174,8 @@ func runCerca(cmd *cobra.Command, flags *rootFlags, archiveSlug string, p cercaP
 	// sfuggita e relegare in fondo quello che li ha nel titolo.
 	termini := terminiRicerca(p.Params)
 	recs = ordinaPerPertinenza(recs, termini)
-	pertHint := pertinenzaHint(recs, termini, arc.Slug)
+	pertHint := pertinenzaHint(recs, termini, arc.Slug, strings.TrimSpace(p.Params["frase"]) != "")
+	frHint := fraseHint(p.Params)
 	omonHint := omonimiHint(recs, arc.Slug)
 	spezzHint := spezzatoHint(spezzato)
 	sommHint := sommariHint(truncated, arc.Slug, p.Params, termini)
@@ -177,17 +184,19 @@ func runCerca(cmd *cobra.Command, flags *rootFlags, archiveSlug string, p cercaP
 		// L'avviso resta anche su stderr: la busta serve a chi legge il JSON,
 		// non a togliere l'informazione a chi usa la CLI a mano.
 		warnTruncated(truncated, len(recs), arc.Slug)
+		warnPertinenza(frHint)
 		warnPertinenza(spezzHint)
 		warnPertinenza(pertHint)
 		warnPertinenza(omonHint)
 		warnPertinenza(sommHint)
 		return emitEnvelope(cmd.OutOrStdout(), flatRecords(recs, firm), truncated,
-			uniscoHint(truncatedHint(truncated, len(recs), arc.Slug), spezzHint, pertHint, omonHint, sommHint), flags)
+			uniscoHint(truncatedHint(truncated, len(recs), arc.Slug), frHint, spezzHint, pertHint, omonHint, sommHint), flags)
 	}
 	if err := emitRecords(cmd, flags, *arc, recs, firm); err != nil {
 		return err
 	}
 	warnTruncated(truncated, len(recs), arc.Slug)
+	warnPertinenza(frHint)
 	warnPertinenza(spezzHint)
 	warnPertinenza(pertHint)
 	warnPertinenza(omonHint)
@@ -236,6 +245,49 @@ func warnPertinenza(hint string) {
 	if hint != "" {
 		fmt.Fprintln(os.Stderr, hint)
 	}
+}
+
+// fraseHint avvisa quando `--frase` non ha potuto esprimere l'adiacenza.
+//
+// I titoli delle manovre sono fatti così: «Coesione e crescita». La
+// congiunzione è anche l'operatore AND di ISIS, quindi la locuzione non è
+// esprimibile parola-per-parola: il comando scarta la congiunzione e allarga
+// la distanza (`coesione adj2 crescita`), che è una prossimità, non la
+// locuzione esatta promessa dal flag. Il flag consegnava già qualcosa di
+// diverso da quel che prometteva; la differenza fra prima e adesso è che
+// adesso lo dice, e dice dove sta la via esatta.
+func fraseHint(params map[string]string) string {
+	v := strings.TrimSpace(params["frase"])
+	if v == "" {
+		return ""
+	}
+	expr, scartati, collisioni := icaro.FraseDegradata(v)
+	// Collisione non risolvibile: la parola e' piena e toglierla falsificherebbe
+	// la ricerca, quindi la frase e' partita intatta — e il portale la legge
+	// come un'espressione booleana. Prima questo caso era muto.
+	if len(collisioni) > 0 {
+		verbo, cosa := "è", "un operatore di ricerca"
+		if len(collisioni) > 1 {
+			verbo, cosa = "sono", "operatori di ricerca"
+		}
+		return fmt.Sprintf(
+			"hint: %s in «%s» %s anche %s del portale: la locuzione non è esprimibile e la ricerca è partita così com'era, cioè letta come un'espressione booleana. Per scrivere l'espressione a mano usa --isis-query.",
+			paroleHint(collisioni), v, verbo, cosa)
+	}
+	if len(scartati) == 0 {
+		return ""
+	}
+	return fmt.Sprintf(
+		"hint: %s in «%s» collide con il vocabolario di ricerca del portale e non può stare dentro una locuzione: la ricerca è partita come `%s`, cioè le parole vicine entro quella distanza, non la locuzione esatta. Per scrivere l'espressione a mano usa --isis-query.",
+		paroleHint(scartati), v, expr)
+}
+
+// paroleHint nomina uno o piu' token nell'avviso, con l'articolo giusto.
+func paroleHint(tok []string) string {
+	if len(tok) == 1 {
+		return "la parola " + virgolette(tok)[0]
+	}
+	return "le parole " + strings.Join(virgolette(tok), " e ")
 }
 
 // terminiRicerca estrae le parole cercate a testo libero (--testo, --frase).
@@ -356,12 +408,15 @@ func titoloMatcha(titolo string, termini []string) bool {
 // Icaro, e sui tre serviti da /bd/ (resoconti, sommari, convocazioni) non è
 // nemmeno un flag. Consigliarlo lì manderebbe in un vicolo cieco chi segue
 // l'avviso alla lettera, che è esattamente chi l'avviso deve aiutare.
-func pertinenzaHint(recs []icaro.Record, termini []string, slug string) string {
+func pertinenzaHint(recs []icaro.Record, termini []string, slug string, fraseUsata bool) string {
 	if len(termini) == 0 || len(recs) == 0 {
 		return ""
 	}
 	rimedio := "alza --limit, oppure usa --frase per la locuzione esatta"
-	if icaro.IsBDArchive(slug) {
+	// Consigliare --frase a chi ha gia' passato --frase manda in un cerchio:
+	// e' l'avviso a cui e' arrivato proprio seguendo il flag. Stesso motivo del
+	// ramo /bd/, dove il flag non esiste.
+	if icaro.IsBDArchive(slug) || fraseUsata {
 		rimedio = "alza --limit"
 	}
 	troncati := 0
@@ -1195,6 +1250,12 @@ func dryRunTarget(arc icaro.Archive, params map[string]string, isisRaw string) (
 	expr := icaro.BuildQuery(arc, params, isisRaw)
 	out["backend"] = "icaro"
 	out["isis_query"] = expr
+	// L'anteprima e' l'artefatto con cui si diagnostica una ricerca storta: se
+	// la frase e' stata degradata e qui non si dice, --dry-run mostra
+	// un'espressione giusta senza dire che non e' quella chiesta.
+	if h := fraseHint(params); h != "" {
+		out["nota_frase"] = strings.TrimPrefix(h, "hint: ")
+	}
 	out["would_fetch"] = fmt.Sprintf("%s/icaro/default.jsp?icaDB=%s&icaQuery=%s", icaro.DefaultBaseURL, arc.ID, expr)
 	return out, nil
 }
