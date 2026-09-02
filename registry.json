@@ -1477,6 +1477,53 @@
       }
     },
     {
+      "name": "anac-pl",
+      "category": "other",
+      "api": "ANAC Pubblicità a Valore Legale",
+      "description": "Cerca bandi, esiti e avvisi di gara della piattaforma ANAC dalla riga di comando, con dettaglio JSON, cronologia, store locale e ricerca offline.",
+      "search_terms": [
+        "anac-pl",
+        "ANAC Pubblicità a Valore Legale",
+        "anac-pl-pp-cli",
+        "Cerca bandi, esiti e avvisi di gara della piattaforma ANAC dalla riga di comando, con dettaglio JSON, cronologia, store locale e ricerca offline.",
+        "Store locale + sync",
+        "sync",
+        "Scarica e conserva gli avvisi in un database SQLite locale per analisi offline.",
+        "Ricerca offline FTS",
+        "search-local",
+        "Cerca tra gli avvisi gia' sincronizzati in locale, senza rete.",
+        "Export CSV/JSON",
+        "export",
+        "Esporta gli avvisi sincronizzati in CSV o JSON per fogli di calcolo e pipeline dati."
+      ],
+      "path": "library/other/anac-pl",
+      "release": {
+        "cli_name": "anac-pl-pp-cli",
+        "version": "2026.9.1",
+        "released_at": "2026-09-02T09:23:11Z",
+        "source_commit": "5e5909e870f1bba7fe341b91e17056c9eb751194"
+      },
+      "printer": "aborruso",
+      "printer_name": "aborruso",
+      "creator": {
+        "handle": "aborruso",
+        "name": "aborruso"
+      },
+      "mcp": {
+        "binary": "anac-pl-pp-mcp",
+        "transports": [
+          "stdio",
+          "http"
+        ],
+        "tool_count": 5,
+        "public_tool_count": 5,
+        "auth_type": "none",
+        "env_vars": [],
+        "mcp_ready": "full",
+        "spec_format": "internal"
+      }
+    },
+    {
       "name": "ankiweb",
       "category": "education",
       "api": "Ankiweb",
@@ -3248,6 +3295,12 @@
         "Project your reward-redemption spend from your own history -- a simple trend line, not a black box."
       ],
       "path": "library/productivity/bonusly",
+      "release": {
+        "cli_name": "bonusly-pp-cli",
+        "version": "2026.9.1",
+        "released_at": "2026-09-02T09:18:50Z",
+        "source_commit": "3c61f2e49af6ef63831cb0a1f86ce48c1dcea5e0"
+      },
       "printer": "enlewof",
       "printer_name": "Allen Lew",
       "creator": {
@@ -3353,6 +3406,52 @@
         "mcp_ready": "partial",
         "spec_format": "internal"
       }
+    },
+    {
+      "name": "bookmakersreview",
+      "category": "media-and-entertainment",
+      "api": "bookmakersreview",
+      "description": "Every sportsbook's price, BMR's own sharp consensus, and full line history — for free, from the terminal, no API key required.",
+      "search_terms": [
+        "bookmakersreview",
+        "bookmakersreview-pp-cli",
+        "Odds Value (+EV Finder)",
+        "odds value",
+        "See which sportsbook's current price beats the vig-free fair line before you bet.",
+        "Steam Move Detector",
+        "steam scan",
+        "Scan today's whole slate for fast, coordinated line moves that signal sharp money before the market fully reacts.",
+        "Record a Bet",
+        "bets record",
+        "Log your own wager (event, market, price, book, timestamp) to a local ledger.",
+        "Grade a Bet's Closing Line Value",
+        "bets grade",
+        "Compare one recorded bet's price to the market's closing line to compute its CLV.",
+        "Aggregate CLV Report",
+        "bets report",
+        "See your running closing-line-value percentage and win rate across every recorded bet.",
+        "Arbitrage Scan",
+        "arb scan",
+        "Find risk-free two-sided price mismatches across sportsbooks for one event.",
+        "Line Movement Chart",
+        "odds movement",
+        "See the full open-to-current price timeline for one event and market, across books."
+      ],
+      "path": "library/media-and-entertainment/bookmakersreview",
+      "release": {
+        "cli_name": "bookmakersreview-pp-cli",
+        "version": "2026.9.1",
+        "released_at": "2026-09-02T09:23:11Z",
+        "source_commit": "9ec7a5a114a3523e649cf1615d49cf48611b4245"
+      },
+      "printer": "jimtje",
+      "printer_name": "jim zhou",
+      "contributors": [
+        {
+          "handle": "jimtje",
+          "name": "jim zhou"
+        }
+      ]
     },
     {
       "name": "booksy",
@@ -10476,6 +10575,45 @@
       }
     },
     {
+      "name": "govspend",
+      "category": "other",
+      "api": "Govspend",
+      "description": "Read-only public-sector spending and opportunity research CLI for USAspending awards, agency and vendor footprints, Grants.gov opportunities, and SAM.gov opportunity setup.",
+      "search_terms": [
+        "govspend",
+        "govspend-pp-cli",
+        "Read-only public-sector spending and opportunity research CLI for USAspending awards, agency and vendor footprints, Grants.gov opportunities, and SAM.gov opportunity setup.",
+        "Vendor footprint",
+        "vendor",
+        "Searches USAspending awards for a recipient/vendor and rolls the returned page into agencies, categories, recent awards, source URL, and freshness caveats.",
+        "Agency spend profile",
+        "agency",
+        "Matches a federal agency from USAspending references, then produces a compact recent-awards view for the matched agency name.",
+        "Award search",
+        "awards",
+        "Searches USAspending awards by keyword, vendor, awarding agency, NAICS, PSC, and date window with dry-run request visibility.",
+        "Grant opportunity search",
+        "grants",
+        "Searches the public Grants.gov search endpoint without credentials and reports opportunity number, title, agency, status, and open/close dates.",
+        "SAM.gov opportunity setup",
+        "opportunities",
+        "Builds SAM.gov Opportunities API searches when GOVSPEND_SAM_API_KEY is configured and returns structured setup guidance when it is not."
+      ],
+      "path": "library/other/govspend",
+      "release": {
+        "cli_name": "govspend-pp-cli",
+        "version": "2026.9.1",
+        "released_at": "2026-09-02T09:23:11Z",
+        "source_commit": "2fdbf64b90399a6d9e0d9ba2e200c73696160811"
+      },
+      "printer": "sdhilip200",
+      "printer_name": "Dhilip Subramanian",
+      "creator": {
+        "handle": "sdhilip200",
+        "name": "Dhilip Subramanian"
+      }
+    },
+    {
       "name": "granola",
       "category": "productivity",
       "api": "Granola",
@@ -11308,6 +11446,12 @@
         "Net income minus expense by property or month over a date range, from the live ledger."
       ],
       "path": "library/travel/hostex",
+      "release": {
+        "cli_name": "hostex-pp-cli",
+        "version": "2026.9.1",
+        "released_at": "2026-09-01T09:37:26Z",
+        "source_commit": "bb14e2fd96c5d79ba261dc7b7ed882cf3fb1426e"
+      },
       "printer": "Bust011r",
       "printer_name": "Bust011r",
       "creator": {
