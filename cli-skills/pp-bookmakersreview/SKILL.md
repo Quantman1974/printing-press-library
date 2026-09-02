@@ -1,7 +1,7 @@
 ---
-name: pp-bonusly
-description: "The recognition analytics Bonusly reserves for admins -- rebuilt from data any employee can already read. Trigger phrases: `give someone bonusly recognition`, `check my bonusly points balance`, `who have I not recognized on my team`, `search my bonusly recognition history`, `bonusly budget pacing for my team`, `use bonusly`, `run bonusly`."
-author: "Allen Lew"
+name: pp-bookmakersreview
+description: "Every sportsbook's price, BMR's own sharp consensus, and full line history — for free, from the terminal, no API key required. Trigger phrases: `check NFL odds`, `best moneyline price`, `line movement`, `steam move`, `closing line value`, `sportsbook consensus`, `use bookmakersreview`, `run bookmakersreview`."
+author: "jim zhou"
 license: "Apache-2.0"
 argument-hint: "<command> [args] | install cli|mcp"
 allowed-tools: "Read Bash"
@@ -9,160 +9,114 @@ metadata:
   openclaw:
     requires:
       bins:
-        - bonusly-pp-cli
+        - bookmakersreview-pp-cli
     install:
       - kind: go
-        bins: [bonusly-pp-cli]
-        module: github.com/mvanhorn/printing-press-library/library/productivity/bonusly/cmd/bonusly-pp-cli
+        bins: [bookmakersreview-pp-cli]
+        module: github.com/mvanhorn/printing-press-library/library/media-and-entertainment/bookmakersreview/cmd/bookmakersreview-pp-cli
 ---
 <!-- GENERATED FILE — DO NOT EDIT.
-     This file is a verbatim mirror of library/productivity/bonusly/SKILL.md,
+     This file is a verbatim mirror of library/media-and-entertainment/bookmakersreview/SKILL.md,
      regenerated post-merge by tools/generate-skills/. Hand-edits here are
      silently overwritten on the next regen. Edit the library/ source instead.
      See the repository agent guide, section "Generated artifacts: registry.json, cli-skills/". -->
 
-# Bonusly — Printing Press CLI
+# BookmakersReview — Printing Press CLI
 
 ## Prerequisites: Install the CLI
 
-This skill drives the `bonusly-pp-cli` binary. **You must verify the CLI is installed before invoking any command from this skill.** If it is missing, install it first:
+This skill drives the `bookmakersreview-pp-cli` binary. **You must verify the CLI is installed before invoking any command from this skill.** If it is missing, install it first:
 
 1. Install via the Printing Press installer. It defaults binaries to `$HOME/.local/bin` on macOS/Linux and `%LOCALAPPDATA%\Programs\PrintingPress\bin` on Windows:
    ```bash
-   npx -y @mvanhorn/printing-press-library install bonusly --cli-only
+   npx -y @mvanhorn/printing-press-library install bookmakersreview --cli-only
    ```
-2. Verify: `bonusly-pp-cli --version`
+2. Verify: `bookmakersreview-pp-cli --version`
 3. Ensure the reported install directory is on `$PATH` for the agent/runtime that will invoke this skill.
 
-If the `npx` install fails (no Node, offline, etc.), fall back to a direct Go install (requires Go 1.26.6 or newer). This installs into `$GOPATH/bin` (default `$HOME/go/bin`), so add that directory to `$PATH` instead:
+If the `npx` install fails (no Node, offline, etc.), fall back to a direct Go install (requires Go 1.26.5 or newer). This installs into `$GOPATH/bin` (default `$HOME/go/bin`), so add that directory to `$PATH` instead:
 
 ```bash
-go install github.com/mvanhorn/printing-press-library/library/productivity/bonusly/cmd/bonusly-pp-cli@latest
+go install github.com/mvanhorn/printing-press-library/library/media-and-entertainment/bookmakersreview/cmd/bookmakersreview-pp-cli@latest
 ```
 
 If `--version` reports "command not found" after install, the runtime cannot see the binary directory on `$PATH`. Do not proceed with skill commands until verification succeeds.
 
-Bonusly's own Analytics API and admin reports compute participation, spend, and recognition-equity insights, but they require an admin scope most employees don't have. This CLI mirrors exactly the data a regular employee CAN read -- the company feed, org chart, your own balance and redemptions -- into a local SQLite database, then computes that same category of insight offline: budget pacing, burn-rate forecasting, neglected-teammate detection, and company-values trends. No admin access required, and it works when you're offline.
+BookmakersReview runs a free, unauthenticated GraphQL feed behind its odds-comparison tool that already includes consensus, opening/current/historical lines, injuries, and weather in one graph. This CLI wraps it, adds a local SQLite history no paid odds API gives you by default, and layers on vig-free value finding, steam detection, and closing-line-value grading that no sportsbook data API — paid or free — ships out of the box.
 
 ## When to Use This CLI
 
-Use this CLI when a Bonusly user without admin access wants participation, equity, or spend insight that Bonusly's own UI reserves for admin reports, or wants to search/analyze their own recognition history offline.
+Use this CLI when you need current or historical sports-betting odds, sharp consensus, line movement, or closing-line-value analysis for U.S.-facing sportsbooks, and want it scriptable/offline instead of manually comparing books in a browser.
 
 ## Anti-triggers
 
 Do not use this CLI for:
-- Do not use this for company-wide admin reporting (participation report, spend totals, redemption approvals) -- those need an admin-scoped token this CLI does not support.
-- Do not use this to detect deleted recognitions retroactively -- the non-admin feed has no tombstone/deletion signal, only the admin-gated Analytics API does.
-- Do not use this for real-time notifications or a live dashboard -- it's a CLI with a local mirror, not a background service.
+- Do not use this CLI to place real bets — it is a read-only odds/data tool with a local bet ledger for your own tracking, not a sportsbook integration.
+- Do not use this CLI for non-US/offshore-only or niche international leagues without first checking `leagues list` — BMR's coverage is US-sportsbook-centric.
+- Do not use this CLI as a source of betting advice or guaranteed win probabilities — `odds value`/`arb scan` surface mathematical relationships in published prices, not predictions.
 
 ## Unique Capabilities
 
 These capabilities aren't available in any other tool for this API.
 
-### Local state that compounds
-- **`recognition audit`** — See whether your team's recognition spend is on pace with its monthly budget, broken down by department -- the report Bonusly normally reserves for admins.
+### Line shopping
+- **`odds value`** — See which sportsbook's current price beats the vig-free fair line before you bet.
 
-  _Reach for this when a team lead wants pacing/budget visibility without admin access, instead of manually tallying the web feed._
+  _Reach for this before placing a bet to confirm you are not just getting the highest number, but a genuinely positive-EV price._
 
   ```bash
-  bonusly-pp-cli recognition audit --dept engineering --agent
+  bookmakersreview-pp-cli odds value --event 123456 --market 1 --agent
   ```
-- **`recognition search-mine`** — Search your own given and received recognition offline, without scrolling the public company feed. Requires one live lookup to confirm your identity (no local fallback); not yet verified against a real API response in this build.
+- **`steam scan`** — Scan today's whole slate for fast, coordinated line moves that signal sharp money before the market fully reacts.
 
-  _Use this for self-review prep or recalling why you were recognized -- the company-wide feed search returns everyone's posts, not just yours._
+  _Use this when you want to catch sharp action across an entire day's games rather than watching one event._
 
   ```bash
-  bonusly-pp-cli recognition search-mine "migration project" --agent
+  bookmakersreview-pp-cli steam scan --league 16 --since 3h --agent
   ```
-- **`balance history`** — Track your giving-allowance burn rate over time and see forfeiture coming before the monthly reset, not after.
+- **`arb scan`** — Find risk-free two-sided price mismatches across sportsbooks for one event.
 
-  _Check this a few days before month-end to see if points are about to be forfeited._
+  _Use this to find guaranteed-profit spreads across books; do not use it to judge single-side value, use odds value for that._
 
   ```bash
-  bonusly-pp-cli balance history --agent
+  bookmakersreview-pp-cli arb scan --event 123456 --market 1
   ```
-- **`recognition gap`** — Find direct reports you haven't recognized recently, without an admin's Participation Report. Requires a live lookup to resolve your manager identity and direct reports (no local fallback); not yet verified against a real API response in this build.
 
-  _Use before 1:1s or sprint retros to catch teammates who've gone unrecognized._
+### Closing line value
+- **`bets record`** — Log your own wager (event, market, price, book, timestamp) to a local ledger.
+
+  _Use this immediately after placing a real bet so it can later be graded against the closing line._
 
   ```bash
-  bonusly-pp-cli recognition gap --manager me --days 30 --agent
+  bookmakersreview-pp-cli bets record --event 123456 --market 3 --price 2.5 --book 9 --boid 1
   ```
-- **`recognition values`** — See which company-value hashtags are actually trending in a department, instead of manually tallying the feed.
+- **`bets grade`** — Compare one recorded bet's price to the market's closing line to compute its CLV.
 
-  _Use this for a culture pulse-check across a team or the whole company._
+  _Use this after a game closes to see whether you beat the closing number, the standard measure of betting skill._
 
   ```bash
-  bonusly-pp-cli recognition values --dept engineering --agent
+  bookmakersreview-pp-cli bets grade --bet-id 42 --agent
   ```
-- **`redemptions forecast`** — Project your reward-redemption spend from your own history -- a simple trend line, not a black box.
+- **`bets report`** — See your running closing-line-value percentage and win rate across every recorded bet.
 
-  _Use this to sanity-check whether your redeemable balance will cover a reward you're eyeing._
+  _Use this weekly/monthly to track betting performance over time instead of grading bets one at a time._
 
   ```bash
-  bonusly-pp-cli redemptions forecast --agent
+  bookmakersreview-pp-cli bets report --since 30d --group-by market --agent
+  ```
+- **`odds movement`** — See the full open-to-current price timeline for one event and market, across books.
+
+  _Use this to see how a specific line moved over time; use steam scan instead to find movement across the whole day's slate._
+
+  ```bash
+  bookmakersreview-pp-cli odds movement --event 123456 --market 2 --agent
   ```
 
 ## Command Reference
 
-<!-- pp:hand-edit bonusly-remove-broken-commands — awards, groups, incentives,
-     and meetings command groups removed below: no working endpoint could be
-     found for any of them despite ~20 live path probes each. See
-     .printing-press-patches/bonusly-remove-broken-commands.json. -->
+**graphql** — Raw GraphQL passthrough for the BookmakersReview odds-v2 service (fallback for any of the 174 query fields not promoted as a typed command)
 
-**balance** — Your points balance and lifetime stats
-
-- `bonusly-pp-cli balance` — Your current giving/redeemable balance, monthly budget, and lifetime stats
-
-**company** — Company metadata
-
-- `bonusly-pp-cli company` — Company metadata: name, locale, plan, feature flags, subscription state
-
-**departments** — Departments configured for your company, with headcounts
-
-- `bonusly-pp-cli departments list` — List departments with per-department user counts
-- `bonusly-pp-cli departments users` — List users belonging to a department (exact match)
-
-**locations** — Locations configured for your company, with headcounts
-
-- `bonusly-pp-cli locations list` — List locations with per-location user counts
-- `bonusly-pp-cli locations users` — List users belonging to a location (exact match)
-
-**org** — Org-chart traversal: top-level users, direct reports, manager chains, reporting trees
-
-- `bonusly-pp-cli org chain` — Walk the manager chain upward from a user, closest-first
-- `bonusly-pp-cli org reports` — List users who report directly to a given manager
-- `bonusly-pp-cli org top` — List users with no manager (org-chart entry points)
-- `bonusly-pp-cli org tree` — Walk the reporting tree downward from a user
-
-**give** — Give recognition to one or more colleagues with structured flags
-
-- `bonusly-pp-cli give` — Give recognition using `--to`, `--amount`, `--message`, `--hashtag`. Synthesizes the `+N @mention message #hashtag` reason string Bonusly's API expects; prefer this over the raw `recognition create` passthrough below.
-
-**recognition** — Give, browse, and manage recognition (bonuses)
-
-- `bonusly-pp-cli recognition create` — Give recognition via the raw reason-string DSL directly (low-level passthrough; prefer `give` above for structured input).
-- `bonusly-pp-cli recognition delete` — Delete (undo) a recognition you gave, within 24 hours of creation
-- `bonusly-pp-cli recognition feed` — List/browse the company recognition feed with filters
-- `bonusly-pp-cli recognition get` — Get a single recognition by id
-- `bonusly-pp-cli recognition given` — List recognition given by a user
-- `bonusly-pp-cli recognition group-count` — Resolve a group (department/location/team) and count how many recipients a post would reach
-- `bonusly-pp-cli recognition last-given` — Get when you last gave recognition to each of a batch of users (max 20 ids)
-- `bonusly-pp-cli recognition list-types` — List the recognition-type values accepted by feed filters (celebrations, awards, incentives, peer, external_recognition)
-- `bonusly-pp-cli recognition received` — List recognition received by a user
-- `bonusly-pp-cli recognition update` — Edit a recognition you gave, within 24 hours of creation.
-
-**redemptions** — Your own reward redemptions
-
-- `bonusly-pp-cli redemptions get` — Get a single reward redemption by id (your own, or any if you have rewards-admin)
-- `bonusly-pp-cli redemptions list-mine` — List your own reward redemptions, newest first
-
-**users** — Your own profile and other users in your company
-
-- `bonusly-pp-cli users get` — Resolve a single user by id, email, or display name
-- `bonusly-pp-cli users get-bulk` — Bulk-fetch users by a list of user IDs
-- `bonusly-pp-cli users me` — Get the authenticated user's own profile
-- `bonusly-pp-cli users search` — Search users by name or email, with optional department/location filters
+- `bookmakersreview-pp-cli graphql` — Execute a raw GraphQL query against the odds-v2 service
 
 
 ### Finding the right command
@@ -170,65 +124,58 @@ These capabilities aren't available in any other tool for this API.
 When you know what you want to do but not which command does it, ask the CLI directly:
 
 ```bash
-bonusly-pp-cli which "<capability in your own words>"
+bookmakersreview-pp-cli which "<capability in your own words>"
 ```
 
-`which` resolves a natural-language capability query against this CLI's curated *unique-capability* index (the transcendence commands above), not the full command tree — it will not resolve general operations like giving recognition, auth, or sync. Exit code `0` means at least one match; exit code `2` means no confident match. For anything outside the unique capabilities, use `--help` or the command reference above directly.
+`which` resolves a natural-language capability query to the best matching command from this CLI's curated feature index. Exit code `0` means at least one match; exit code `2` means no confident match — fall back to `--help` or use a narrower query.
 
 ## Recipes
 
-### Narrow a noisy feed response to just the fields you need
+### Find the best price across books
 
 ```bash
-bonusly-pp-cli recognition feed --hashtag teamwork --agent --select recognitions.giver.display_name,recognitions.receivers.display_name,recognitions.amount
+bookmakersreview-pp-cli odds best --event 123456 --market 3 --json
 ```
 
-The feed returns giver/receiver/hashtag/reason/amount per row; --select keeps only the fields an agent actually needs instead of the full nested payload.
+Returns every tracked sportsbook's current spread price for the event, sorted best-first.
 
-### Check budget pacing before month-end
+### Narrow a large event-history payload to just the fields you need
 
 ```bash
-bonusly-pp-cli recognition audit --dept engineering --agent
+bookmakersreview-pp-cli events history --league 16 --from 2025-12-14 --to 2025-12-16 --agent --select eid,dt
 ```
 
-Joins the synced feed against department headcount to show spend-vs-budget offline.
+A date-range history query returns every event's full per-period score breakdown; --select keeps agent context small by returning only the id and kickoff time when you just need to enumerate events (follow up with 'events get <eid>' for full scores on the ones you care about).
 
-### Catch a neglected direct report before a 1:1
+### Check if a price is actually good value, not just the highest number
 
 ```bash
-bonusly-pp-cli recognition gap --manager me --days 30 --agent
+bookmakersreview-pp-cli odds value --event 123456 --market 1 --agent
 ```
 
-Flags direct reports you haven't recognized in the last N days by joining the org tree against your own giving history.
+Strips the vig from consensus to compute fair value, then flags any book beating it — the highest number isn't always +EV.
 
-### Forecast when your monthly allowance will forfeit
+### Scan for sharp/steam action across today's slate
 
 ```bash
-bonusly-pp-cli balance history --agent
+bookmakersreview-pp-cli steam scan --league 16 --since 3h --agent
 ```
 
-Diffs locally-snapshotted balance history to project burn rate against the monthly reset.
+Flags markets where consensus moved fast and far from the opener across the board, a signal of sharp money.
+
+### Track your own closing line value over time
+
+```bash
+bookmakersreview-pp-cli bets report --since 30d --group-by market --agent
+```
+
+Aggregates every bet you've recorded and graded into a running CLV percentage, the standard long-run skill metric for bettors.
 
 ## Auth Setup
 
-Bonusly authenticates with a Personal Access Token (PAT).
+No authentication is required. Every query in this CLI works unauthenticated, exactly like the public odds.bookmakersreview.com tool.
 
-To set up:
-1. Mint a Personal Access Token from your Settings -> Services page (regular users) or Company -> Integrations -> API & Tokens page (admins) at bonus.ly.
-2. Select the scopes this CLI needs (user:read, recognition:read, recognition:write, rewards:read).
-3. Save it to your config:
-   ```bash
-   bonusly-pp-cli auth set-token <your-token-here>
-   ```
-
-Alternatively, configure the token via the environment:
-```bash
-export BONUSLY_API_TOKEN="your-token-here"
-```
-
-Tokens expire after up to 365 days with email reminders 30 and 7 days out.
-
-Run `bonusly-pp-cli doctor` to verify setup.
+Run `bookmakersreview-pp-cli doctor` to verify setup.
 
 ## Agent Mode
 
@@ -238,52 +185,38 @@ Add `--agent` to any command. Expands to: `--json --compact --no-input --no-colo
 - **Filterable** — `--select` keeps a subset of fields. Dotted paths descend into nested structures; arrays traverse element-wise. Critical for keeping context small on verbose APIs:
 
   ```bash
-  bonusly-pp-cli org top --agent --select id,name,email
+  bookmakersreview-pp-cli graphql --query 'query { leagues(limit: 5) { lid nam } }' --agent --select id,name,status
   ```
 - **Previewable** — `--dry-run` shows the request without sending
-- **Offline-friendly** — sync/search commands can use the local SQLite store when available
 - **Non-interactive** — never prompts, every input is a flag
-- **Explicit retries** — use `--idempotent` only when an already-existing create should count as success, and use `--ignore-missing` only when a missing delete target should count as success
-
-### Response envelope
-
-Commands that read from the local store or the API wrap output in a provenance envelope:
-
-```json
-{
-  "meta": {"source": "live" | "local", "synced_at": "...", "reason": "..."},
-  "results": <data>
-}
-```
-
-Parse `.results` for data and `.meta.source` to know whether it's live or local. A human-readable `N results (live)` summary is printed to stderr only when stdout is a terminal AND no machine-format flag (`--json`, `--csv`, `--compact`, `--quiet`, `--plain`, `--select`) is set — piped/agent consumers and explicit-format runs get pure JSON on stdout.
+- **Read-only** — do not use this CLI for create, update, delete, publish, comment, upvote, invite, order, send, or other mutating requests
 
 ## Paths and state
 
 Agents should treat the CLI's path resolver as part of the runtime contract:
 
-- Use `--home <dir>` for one invocation, or set `BONUSLY_HOME=<dir>` to relocate all four path kinds under one root.
-- Use per-kind env vars only when a specific kind must diverge: `BONUSLY_CONFIG_DIR`, `BONUSLY_DATA_DIR`, `BONUSLY_STATE_DIR`, `BONUSLY_CACHE_DIR`.
-- Resolution order is per-kind env var, `--home`, `BONUSLY_HOME`, XDG (`XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME`, `XDG_CACHE_HOME`), then platform defaults.
-- `config` contains settings like `config.toml` and profiles. `data` contains `credentials.toml`, `data.db`, cookies, and auth sidecars. `state` contains persisted queries, jobs, and `teach.log`. `cache` contains regenerable HTTP/cache files.
-- Stored secrets live in `credentials.toml` under the data dir. Existing legacy `config.toml` secrets are read for compatibility and leave `config.toml` on the first auth write.
-- Run `bonusly-pp-cli doctor --fail-on warn` to surface path and credential-location warnings. `agent-context` exposes a schema v4 `paths` block for agents that need the resolved dirs.
+- Use `--home <dir>` for one invocation, or set `BOOKMAKERSREVIEW_HOME=<dir>` to relocate all four path kinds under one root.
+- Use per-kind env vars only when a specific kind must diverge: `BOOKMAKERSREVIEW_CONFIG_DIR`, `BOOKMAKERSREVIEW_DATA_DIR`, `BOOKMAKERSREVIEW_STATE_DIR`, `BOOKMAKERSREVIEW_CACHE_DIR`.
+- Resolution order is per-kind env var, `--home`, `BOOKMAKERSREVIEW_HOME`, XDG (`XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME`, `XDG_CACHE_HOME`), then platform defaults.
+- `config` contains settings like `config.json` and profiles. `data` contains `data.db` (the local bet ledger and any SQLite cache). `state` contains persisted queries, jobs, and `teach.log`. `cache` contains regenerable HTTP/cache files.
+- No authentication is required for this CLI — BookmakersReview's odds API is fully unauthenticated, so there are no credentials, cookies, or auth sidecars to store anywhere.
+- Run `bookmakersreview-pp-cli doctor --fail-on warn` to surface path warnings. `agent-context` exposes a schema v4 `paths` block for agents that need the resolved dirs.
 - For MCP, pass relocation through the MCP host config. The MCP binary does not inherit CLI flags:
 
   ```json
   {
     "mcpServers": {
-      "bonusly": {
-        "command": "bonusly-pp-mcp",
+      "bookmakersreview": {
+        "command": "bookmakersreview-pp-mcp",
         "env": {
-          "BONUSLY_HOME": "/srv/bonusly"
+          "BOOKMAKERSREVIEW_HOME": "/srv/bookmakersreview"
         }
       }
     }
   }
   ```
 
-Fleet precedence: an inherited per-kind env var overrides an explicit `--home` for that kind. Use `BONUSLY_HOME` or per-kind vars as durable fleet levers, and use `--home` only for a single invocation. Relocation is not reversible by unsetting env vars; move files manually before clearing `BONUSLY_HOME`, or `doctor` will not find credentials left under the former root.
+Fleet precedence: an inherited per-kind env var overrides an explicit `--home` for that kind. Use `BOOKMAKERSREVIEW_HOME` or per-kind vars as durable fleet levers, and use `--home` only for a single invocation. Relocation is not reversible by unsetting env vars; move files manually before clearing `BOOKMAKERSREVIEW_HOME`, or `doctor` will not find the local bet ledger left under the former root.
 
 ## Automatic learning
 
@@ -294,7 +227,7 @@ This CLI ships a self-capturing learning loop. The CLI does its own bookkeeping:
 Before list/search/drill commands on a new user question, run:
 
 ```bash
-bonusly-pp-cli recall "<user's question>" --agent
+bookmakersreview-pp-cli recall "<user's question>" --agent
 ```
 
 The response envelope:
@@ -317,7 +250,7 @@ The response envelope:
     { "id": 12, "class": "flag_alias | playbook_candidate",
       "summary": "...", "sightings": 3, "last_seen": "...",
       "rationale": "...",
-      "next_action": ["<trial command>", "bonusly-pp-cli learnings confirm 12"] }
+      "next_action": ["<trial command>", "bookmakersreview-pp-cli learnings confirm 12"] }
   ],
   "playbook": {
     "query_family": "...",
@@ -356,7 +289,7 @@ if Playbook present:
        for the entity slot tokens. If a step's slot is unresolved, fall back to
        discovery for that step only.
     -> the Playbook's expected_tool_calls is a budget; if you find yourself running
-       materially more, record the divergence via `bonusly-pp-cli playbook amend`
+       materially more, record the divergence via `bookmakersreview-pp-cli playbook amend`
        at end-of-session.
 
 elif Notes present (no Playbook):
@@ -382,7 +315,7 @@ else:  // Found == false, no playbook, no notes
 
 Playbook and Notes are orthogonal to the per-resource path. A recall response can carry both a Playbook AND a `Results[]` hit - use both: the Playbook tells you which choreography to run; the resource hits short-circuit specific steps. Default to skipping `mismatches`; pass `--debug-mismatches` only when investigating cold-start surprises.
 
-Candidate judgment details: `learnings confirm <id>` prints the candidate's full payload before materializing it - check that the printed payload matches the behavior you verified. `learnings reject <id>` tombstones the derivation signature so the same candidate does not resurface. The envelope carries only the few candidates worth acting on now; `bonusly-pp-cli learnings candidates` lists the full open set.
+Candidate judgment details: `learnings confirm <id>` prints the candidate's full payload before materializing it - check that the printed payload matches the behavior you verified. `learnings reject <id>` tombstones the derivation signature so the same candidate does not resurface. The envelope carries only the few candidates worth acting on now; `bookmakersreview-pp-cli learnings candidates` lists the full open set.
 
 Graceful degradation: if `learnings confirm` is an unknown command, you are driving an older binary - ignore the candidates guidance and follow the rest of the protocol.
 
@@ -394,7 +327,6 @@ Graceful degradation: if `learnings confirm` is an unknown command, you are driv
 - `similar_shape_different_entity:<canonical>` (top-level): a structurally matching row exists but its canonical entity differs from the live query's. Treated as cold start; the warning carries the conflicting canonical as a hint, but the row is NOT promoted into Results.
 - `ambiguous_alias` (top-level): a single query entity resolved to multiple canonicals (e.g., "Cards" → Arizona Cardinals + St. Louis Cardinals). Surface the ambiguity from context before committing to a resource.
 - `candidates_present` (top-level): the envelope carries a `candidates` section. Handle it via the candidates branch in Step 2 before anything else.
-- `lookup_refresh_available` (top-level): an entity in the query has no lookup row yet, but synced data could provide one. Run `bonusly-pp-cli sync` to refresh entity lookups.
 - Top-level `no_learnings_for_query_family`: the table had no rows above the Jaccard floor. Pure cold start.
 
 ### Step 4: `teach &` after finalizing your response - always
@@ -402,7 +334,7 @@ Graceful degradation: if `learnings confirm` is an unknown command, you are driv
 Teaching is unconditional. After resolving a query the store could not answer, background-teach the final resource mapping - no call-count threshold, no judging whether it was "worth" learning. The teach is the anchor of the loop: it triggers playbook synthesis for a family without a playbook, and same-referent phrasings fold into one family so near-duplicate teaches do not fragment the store. Fire it after assembling your user-facing response but BEFORE emitting it, with a shell `&` so the call returns immediately:
 
 ```bash
-bonusly-pp-cli teach --query "<user's question>" --resource-type <type> --resource <id1> --resource <id2>
+bookmakersreview-pp-cli teach --query "<user's question>" --resource-type <type> --resource <id1> --resource <id2>
 # (append shell `&` to background it)
 ```
 
@@ -416,7 +348,7 @@ You do not need to decide whether a session "deserves" a playbook: a teach on a 
 
 ```bash
 # Common case: record both the resource learning AND the playbook in one call.
-bonusly-pp-cli teach \
+bookmakersreview-pp-cli teach \
   --query "<user's question>" \
   --resource <id> \
   --playbook-file ~/playbooks/<shape>.json \
@@ -424,7 +356,7 @@ bonusly-pp-cli teach \
 # (append shell `&` to background it)
 
 # Alternate: playbook-only (no resource to record alongside).
-bonusly-pp-cli teach-playbook \
+bookmakersreview-pp-cli teach-playbook \
   --query "<user's question>" \
   --playbook-file ~/playbooks/<shape>.json \
   --notes-file ~/playbooks/<shape>-notes.md
@@ -439,7 +371,7 @@ When you DO find a playbook on a future recall, treat it as ground truth: replay
 If your debug-protocol response identifies a concrete correction the notes or playbook should know — a workaround, an undocumented endpoint shape, a stale field name, observed schema drift, an empty-payload fallback — fire `playbook amend` BEFORE emitting your user-facing response. Same fire-and-forget posture as `teach`.
 
 ```bash
-bonusly-pp-cli playbook amend \
+bookmakersreview-pp-cli playbook amend \
   --query "<exact recall query string>" \
   --add-note "<your concrete correction>"
 # (append shell `&` to background it)
@@ -470,24 +402,24 @@ If a correction is only meaningful with user-specific context, it belongs in a p
 
 ### Measuring the loop
 
-`bonusly-pp-cli learnings stats` reports recall hit rate, teach-to-reuse, playbook resolution rate, and candidate confirm/reject counts from the local `learn_events` table. Rates are null until they have a denominator; everything stays on this machine. Use it to check whether the loop is earning its keep for this CLI.
+`bookmakersreview-pp-cli learnings stats` reports recall hit rate, teach-to-reuse, playbook resolution rate, and candidate confirm/reject counts from the local `learn_events` table. Rates are null until they have a denominator; everything stays on this machine. Use it to check whether the loop is earning its keep for this CLI.
 
 ### Disabling learning
 
 - `--no-learn` on a single command short-circuits both `recall` and the `teach` write path. Use for deterministic agent flows or tests that must not be affected by accumulated learnings.
-- `BONUSLY_NO_LEARN=true` in the environment globally disables the pipeline.
+- `BOOKMAKERSREVIEW_NO_LEARN=true` in the environment globally disables the pipeline.
 
 ## Agent Feedback
 
 When you (or the agent) notice something off about this CLI, record it:
 
 ```
-bonusly-pp-cli feedback "the --since flag is inclusive but docs say exclusive"
-bonusly-pp-cli feedback --stdin < notes.txt
-bonusly-pp-cli feedback list --json --limit 10
+bookmakersreview-pp-cli feedback "the --since flag is inclusive but docs say exclusive"
+bookmakersreview-pp-cli feedback --stdin < notes.txt
+bookmakersreview-pp-cli feedback list --json --limit 10
 ```
 
-Entries are stored locally as `feedback.jsonl` under the resolved data dir. They are never POSTed unless `BONUSLY_FEEDBACK_ENDPOINT` is set AND either `--send` is passed or `BONUSLY_FEEDBACK_AUTO_SEND=true`. Default behavior is local-only.
+Entries are stored locally as `feedback.jsonl` under the resolved data dir. They are never POSTed unless `BOOKMAKERSREVIEW_FEEDBACK_ENDPOINT` is set AND either `--send` is passed or `BOOKMAKERSREVIEW_FEEDBACK_AUTO_SEND=true`. Default behavior is local-only.
 
 Write what *surprised* you, not a bug report. Short, specific, one line: that is the part that compounds.
 
@@ -508,11 +440,11 @@ Unknown schemes are refused with a structured error naming the supported set. We
 A profile is a saved set of flag values, reused across invocations. Use it when a scheduled or recurring agent reuses the same saved flags while providing different input each run.
 
 ```
-bonusly-pp-cli profile save briefing --json
-bonusly-pp-cli --profile briefing org top
-bonusly-pp-cli profile list --json
-bonusly-pp-cli profile show briefing
-bonusly-pp-cli profile delete briefing --yes
+bookmakersreview-pp-cli profile save briefing --json
+bookmakersreview-pp-cli --profile briefing graphql --query 'query { leagues(limit: 5) { lid nam } }'
+bookmakersreview-pp-cli profile list --json
+bookmakersreview-pp-cli profile show briefing
+bookmakersreview-pp-cli profile delete briefing --yes
 ```
 
 Explicit flags always win over profile values; profile values win over defaults. `agent-context` lists all available profiles under `available_profiles` so introspecting agents discover them at runtime.
@@ -524,7 +456,6 @@ Explicit flags always win over profile values; profile values win over defaults.
 | 0 | Success |
 | 2 | Usage error (wrong arguments) |
 | 3 | Resource not found |
-| 4 | Authentication required |
 | 5 | API error (upstream issue) |
 | 7 | Rate limited (wait and retry) |
 | 10 | Config error |
@@ -533,7 +464,7 @@ Explicit flags always win over profile values; profile values win over defaults.
 
 Parse `$ARGUMENTS`:
 
-1. **Empty, `help`, or `--help`** → show `bonusly-pp-cli --help` output
+1. **Empty, `help`, or `--help`** → show `bookmakersreview-pp-cli --help` output
 2. **Starts with `install`** → ends with `mcp` → MCP installation; otherwise → see Prerequisites above
 3. **Anything else** → Direct Use (execute as CLI command with `--agent`)
 
@@ -541,21 +472,21 @@ Parse `$ARGUMENTS`:
 
 1. Install the MCP server:
    ```bash
-   go install github.com/mvanhorn/printing-press-library/library/productivity/bonusly/cmd/bonusly-pp-mcp@latest
+   go install github.com/mvanhorn/printing-press-library/library/media-and-entertainment/bookmakersreview/cmd/bookmakersreview-pp-mcp@latest
    ```
 2. Register with Claude Code:
    ```bash
-   claude mcp add bonusly-pp-mcp -- bonusly-pp-mcp
+   claude mcp add bookmakersreview-pp-mcp -- bookmakersreview-pp-mcp
    ```
 3. Verify: `claude mcp list`
 
 ## Direct Use
 
-1. Check if installed: `which bonusly-pp-cli`
+1. Check if installed: `which bookmakersreview-pp-cli`
    If not found, offer to install (see Prerequisites at the top of this skill).
 2. Match the user query to the best command from the Unique Capabilities and Command Reference above.
 3. Execute with the `--agent` flag:
    ```bash
-   bonusly-pp-cli <command> [subcommand] [args] --agent
+   bookmakersreview-pp-cli <command> [subcommand] [args] --agent
    ```
-4. If ambiguous, drill into subcommand help: `bonusly-pp-cli <command> --help`.
+4. If ambiguous, drill into subcommand help: `bookmakersreview-pp-cli <command> --help`.
