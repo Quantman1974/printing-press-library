@@ -2,6 +2,10 @@
 
 This file is maintained by printing-press-library release automation. Do not hand-edit release sections in normal PRs.
 
+## 2026.9.1 - 2026-09-02
+
+- fix(tesla): fix agent onboarding dead paths (#1904).
+
 ## 2026.8.1 - 2026-08-17
 
 - fix(catalog): align Go fallback docs with toolchain floor (#1735).
