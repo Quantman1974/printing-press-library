@@ -644,29 +644,62 @@ go.mod; use ` + "`go build`" + ` from the cloned tree.`
 
 // locateRelayPrivateKey returns the private signing key path for the relay,
 // preferring config.Fleet.PrivateKeyPath, then env TESLA_FLEET_KEY_FILE, then
-// ~/.tesla/snowflake-private.pem (the BLE-pair default), then errors with a
-// remediation hint.
+// any valid *-private.pem file in ~/.tesla/ (fleet-template/ble-pair output),
+// then errors with a remediation hint.
+//
+// Returns an error when an explicit path (config or env) is not a valid private
+// key PEM, or when multiple auto-detected candidates exist and none can be
+// uniquely matched to a public key.
 func locateRelayPrivateKey(flags *rootFlags) (string, error) {
 	cfg, _ := config.Load(flagsConfigPath(flags))
 	if cfg != nil && strings.TrimSpace(cfg.Fleet.PrivateKeyPath) != "" {
 		p := cfg.Fleet.PrivateKeyPath
-		if _, err := os.Stat(p); err == nil {
-			return p, nil
+		abs, err := filepath.Abs(p)
+		if err != nil {
+			return "", fmt.Errorf("resolve config Fleet.PrivateKeyPath %q: %w", p, err)
 		}
+		if err := validatePrivateKeyPEM(abs); err != nil {
+			return "", fmt.Errorf("Fleet.PrivateKeyPath: %w", err)
+		}
+		return abs, nil
 	}
 	if v := strings.TrimSpace(os.Getenv("TESLA_FLEET_KEY_FILE")); v != "" {
-		if _, err := os.Stat(v); err == nil {
-			return v, nil
+		abs, err := filepath.Abs(v)
+		if err != nil {
+			return "", fmt.Errorf("resolve TESLA_FLEET_KEY_FILE=%q: %w", v, err)
 		}
-	}
-	home, err := os.UserHomeDir()
-	if err == nil {
-		candidate := filepath.Join(home, ".tesla", "snowflake-private.pem")
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate, nil
+		if err := validatePrivateKeyPEM(abs); err != nil {
+			return "", fmt.Errorf("TESLA_FLEET_KEY_FILE: %w", err)
 		}
+		return abs, nil
 	}
-	return "", errors.New("no private signing key found; run `tesla auth fleet-template --gen-key` (Fleet) or `tesla auth ble-pair` (BLE) first to generate one")
+	// Fallback: scan ~/.tesla/ for valid *-private.pem files.
+	home, homeErr := os.UserHomeDir()
+	if homeErr != nil || home == "" {
+		return "", errors.New("no private signing key found; run `tesla auth fleet-template --gen-key` (Fleet) or `tesla auth ble-pair` (BLE) first to generate one")
+	}
+	teslaDir := filepath.Join(home, ".tesla")
+	candidates := scanValidPrivateKeys(teslaDir)
+	if len(candidates) == 0 {
+		return "", errors.New("no private signing key found; run `tesla auth fleet-template --gen-key` (Fleet) or `tesla auth ble-pair` (BLE) first to generate one")
+	}
+	var domain string
+	if cfg != nil {
+		domain = strings.TrimSpace(cfg.Fleet.PublicKeyDomain)
+	}
+	matched, err := matchCandidatesToDomain(teslaDir, candidates, domain)
+	if err != nil {
+		return "", fmt.Errorf("%w; set TESLA_FLEET_KEY_FILE=<path>", err)
+	}
+	if matched != "" {
+		return matched, nil
+	}
+	// Relay also serves BLE. With no Fleet public-key domain in config there
+	// is nothing to bind against, so a lone ~/.tesla key is accepted.
+	if len(candidates) == 1 {
+		return candidates[0], nil
+	}
+	return "", errMultipleCandidates(teslaDir, candidates, "Set TESLA_FLEET_KEY_FILE=<path> to select one.")
 }
 
 // ensureRelayCert generates a self-signed P256 cert (CN=localhost, SAN

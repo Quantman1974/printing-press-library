@@ -31,6 +31,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -179,7 +180,8 @@ This command does not contact Tesla and does not write to disk.`,
 
 // newFleetRegisterCmd performs the partner-token client_credentials grant and
 // the partner_accounts POST to register the public-key host domain. Stores
-// client_id, client_secret, and public_key_domain in the [fleet] config block.
+// client_id, client_secret, public_key_domain, and private_key_path in the
+// [fleet] config block.
 //
 // Per KD2, the client secret can be supplied via --client-secret-file (mode
 // 600 file, preferred) or --client-secret (env: TESLA_FLEET_CLIENT_SECRET; ps-
@@ -190,6 +192,7 @@ func newFleetRegisterCmd(flags *rootFlags) *cobra.Command {
 		clientSecret     string
 		clientSecretFile string
 		publicKeyDomain  string
+		keyFile          string
 	)
 	cmd := &cobra.Command{
 		Use:   "fleet-register",
@@ -203,16 +206,20 @@ func newFleetRegisterCmd(flags *rootFlags) *cobra.Command {
         https://<domain>/.well-known/appspecific/com.tesla.3p.public-key.pem
      -> 200 means the key is registered
 
-On success, saves client_id, client_secret, and public_key_domain to the
-[fleet] block of your config.toml. The partner token itself (8h lifespan) is
-NOT stored; it's only needed for this registration step. Run fleet-login next
-to mint the user-bound access token.
+On success, saves client_id, client_secret, public_key_domain, and the signing
+private key path (--key-file) to the [fleet] block of your config.toml. The
+partner token itself (8h lifespan) is NOT stored; it's only needed for this
+registration step. Run fleet-login next to mint the user-bound access token.
+
+If --key-file is not specified, the command looks for a key at the default
+location where 'fleet-template --gen-key' writes it (~/.tesla/<host>-private.pem).
 
 Secret handling: pass --client-secret-file (mode 600 file) by preference.
 --client-secret takes the secret on the command line, which is visible to
 'ps aux' on multi-user systems. The env var TESLA_FLEET_CLIENT_SECRET is
 honored when neither flag is set.`,
-		Example: "  tesla-pp-cli auth fleet-register --client-id abc --client-secret-file ~/.tesla/cs --public-key-domain keys.example.com",
+		Example: `  tesla-pp-cli auth fleet-register --client-id abc --client-secret-file ~/.tesla/cs --public-key-domain keys.example.com
+  tesla-pp-cli auth fleet-register --client-id abc --client-secret-file ~/.tesla/cs --public-key-domain keys.example.com --key-file ~/.tesla/tesla-keys-host-private.pem`,
 		Annotations: map[string]string{
 			"mcp:destructive": "true",
 		},
@@ -251,6 +258,13 @@ honored when neither flag is set.`,
 				return configErr(err)
 			}
 
+			// Resolve the signing private key path. Order: explicit --key-file,
+			// then env TESLA_FLEET_KEY_FILE, then auto-detect from ~/.tesla/.
+			effKeyFile, keyErr := resolveFleetKeyFileForRegister(keyFile, publicKeyDomain)
+			if keyErr != nil {
+				return usageErr(keyErr)
+			}
+
 			// Resolve the regional Fleet base once: TESLA_FLEET_API_URL env >
 			// persisted [fleet].api_base > North America default. The partner
 			// token audience, the partner_accounts endpoint, and the persisted
@@ -273,25 +287,153 @@ honored when neither flag is set.`,
 				return apiErr(err)
 			}
 
-			// Persist client_id + secret + domain + resolved region into [fleet].
+			// Persist client_id + secret + domain + key path + resolved region into [fleet].
+			// Always overwrite PrivateKeyPath, including empty: SaveFleetTokens
+			// skips blank fields, so a re-register with no resolved key would
+			// otherwise keep the previous domain's signing path.
 			cfg.Fleet.APIBase = fleetBase
-			if err := cfg.SaveFleetTokens(effClientID, effSecret, "", "", time.Time{}, publicKeyDomain, ""); err != nil {
+			cfg.Fleet.PrivateKeyPath = effKeyFile
+			if err := cfg.SaveFleetTokens(effClientID, effSecret, "", "", time.Time{}, publicKeyDomain, effKeyFile); err != nil {
 				return err
 			}
 
-			return printJSONFiltered(cmd.OutOrStdout(), map[string]any{
+			result := map[string]any{
 				"status":            "registered",
 				"public_key_domain": publicKeyDomain,
 				"storage_path":      cfg.Path,
 				"next":              "Run `tesla auth fleet-login` to mint your user access token.",
-			}, flags)
+			}
+			if effKeyFile != "" {
+				result["key_file"] = effKeyFile
+			} else {
+				result["key_file_warning"] = "No signing key found. Run `tesla auth fleet-template --gen-key` and re-run fleet-register with --key-file, or set TESLA_FLEET_KEY_FILE."
+			}
+			return printJSONFiltered(cmd.OutOrStdout(), result, flags)
 		},
 	}
 	cmd.Flags().StringVar(&clientID, "client-id", "", "Fleet API client_id from developer.tesla.com (env: TESLA_FLEET_CLIENT_ID)")
 	cmd.Flags().StringVar(&clientSecret, "client-secret", "", "Fleet API client_secret (PS-visible; prefer --client-secret-file)")
 	cmd.Flags().StringVar(&clientSecretFile, "client-secret-file", "", "Path to a mode-600 file containing the client_secret (preferred over --client-secret)")
 	cmd.Flags().StringVar(&publicKeyDomain, "public-key-domain", "", "Domain hosting your public key at .well-known/appspecific/com.tesla.3p.public-key.pem")
+	cmd.Flags().StringVar(&keyFile, "key-file", "", "Path to the signing private key (default: auto-detect from ~/.tesla/ based on fleet-template output)")
 	return cmd
+}
+
+const teslaWellKnownPublicKeyPath = "/.well-known/appspecific/com.tesla.3p.public-key.pem"
+
+// fetchWellKnownPublicKey downloads the Tesla well-known partner public key
+// for a domain. Tests replace this to avoid live HTTPS.
+var fetchWellKnownPublicKey = fetchWellKnownPublicKeyHTTPS
+
+func teslaWellKnownPublicKeyURL(domain string) string {
+	return "https://" + strings.TrimSpace(domain) + teslaWellKnownPublicKeyPath
+}
+
+func fetchWellKnownPublicKeyHTTPS(domain string) ([]byte, error) {
+	domain = strings.TrimSpace(domain)
+	if domain == "" {
+		return nil, errors.New("empty public-key domain")
+	}
+	if strings.ContainsAny(domain, "/\\") || strings.Contains(domain, "://") {
+		return nil, fmt.Errorf("invalid public-key domain %q", domain)
+	}
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(teslaWellKnownPublicKeyURL(domain))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("http %d", resp.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	if err != nil {
+		return nil, err
+	}
+	pub := parsePublicKeyPEM(data)
+	if pub == nil {
+		return nil, errors.New("response is not a PEM public key")
+	}
+	return pub, nil
+}
+
+// resolveRegisterPublicKeyMaterial returns PKIX public-key bytes for the
+// domain being registered. Only the hosted well-known PEM is used; a local
+// ~/.tesla/<domain>-public.pem is not a fallback (it may be stale).
+func resolveRegisterPublicKeyMaterial(teslaDir, publicKeyDomain string) ([]byte, string, error) {
+	domain := strings.TrimSpace(publicKeyDomain)
+	if domain == "" {
+		return nil, "", nil
+	}
+	hostedURL := teslaWellKnownPublicKeyURL(domain)
+	b, fetchErr := fetchWellKnownPublicKey(domain)
+	if fetchErr == nil && len(b) > 0 {
+		return b, hostedURL, nil
+	}
+	if fetchErr == nil {
+		fetchErr = errors.New("fetched public key is empty")
+	}
+	return nil, "", fmt.Errorf("cannot fetch public key from %s: %w; specify --key-file", hostedURL, fetchErr)
+}
+
+// resolveFleetKeyFileForRegister resolves the signing private key path for
+// fleet-register. Order: explicit flag, env TESLA_FLEET_KEY_FILE, auto-detect
+// from ~/.tesla/ based on common fleet-template output patterns.
+//
+// Returns ("", nil) when no key is found (caller warns but does not fail).
+// Returns an error when an explicit path is provided but not a valid private
+// key PEM, when a domain public key is available and no candidate matches it,
+// or when multiple auto-detected candidates cannot be uniquely matched.
+func resolveFleetKeyFileForRegister(flagValue, publicKeyDomain string) (string, error) {
+	// Explicit flag wins — must be a valid private key PEM or we fail.
+	if flagValue != "" {
+		abs, err := filepath.Abs(flagValue)
+		if err != nil {
+			return "", fmt.Errorf("--key-file %q: %w", flagValue, err)
+		}
+		if err := validatePrivateKeyPEM(abs); err != nil {
+			return "", fmt.Errorf("--key-file: %w", err)
+		}
+		return abs, nil
+	}
+	// Env override — must be a valid private key PEM or we fail.
+	if v := strings.TrimSpace(os.Getenv("TESLA_FLEET_KEY_FILE")); v != "" {
+		abs, err := filepath.Abs(v)
+		if err != nil {
+			return "", fmt.Errorf("TESLA_FLEET_KEY_FILE=%q: %w", v, err)
+		}
+		if err := validatePrivateKeyPEM(abs); err != nil {
+			return "", fmt.Errorf("TESLA_FLEET_KEY_FILE: %w", err)
+		}
+		return abs, nil
+	}
+	// Auto-detect from ~/.tesla/. fleet-template --gen-key writes to
+	// ~/.tesla/<dest-basename>-private.pem.
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return "", nil
+	}
+	teslaDir := filepath.Join(home, ".tesla")
+
+	candidates := scanValidPrivateKeys(teslaDir)
+	if len(candidates) == 0 {
+		return "", nil
+	}
+
+	matched, err := matchCandidatesToDomain(teslaDir, candidates, publicKeyDomain)
+	if err != nil {
+		return "", err
+	}
+	if matched != "" {
+		return matched, nil
+	}
+	// No hosted public key to bind against (empty domain). A lone candidate
+	// is the only signing key on disk — identity matching cannot run without
+	// target material. --key-file remains the explicit override.
+	if len(candidates) == 1 {
+		return candidates[0], nil
+	}
+	return "", errMultipleCandidates(teslaDir, candidates, "Specify --key-file <path> to select one.")
 }
 
 // newFleetLoginCmd runs the authorization_code grant via a localhost callback

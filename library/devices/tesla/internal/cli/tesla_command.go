@@ -535,8 +535,11 @@ func commandDispatchFleet(cmd *cobra.Command, flags *rootFlags, cfg *config.Conf
 	bin := detectTeslaControlBinary()
 	if bin == "" {
 		return usageErr(fmt.Errorf(
-			"tesla-control not found on PATH or at ~/go/bin/%s; install via:\n"+
-				"  go install github.com/teslamotors/vehicle-command/cmd/tesla-control@latest",
+			"tesla-control not found on PATH or at ~/go/bin/%s; install via clone+build:\n"+
+				"  git clone https://github.com/teslamotors/vehicle-command.git\n"+
+				"  cd vehicle-command && go build -o tesla-control ./cmd/tesla-control\n"+
+				"  mv tesla-control ~/go/bin/\n"+
+				"Note: go install @latest fails due to upstream replace directives.",
 			teslaControlBinary,
 		))
 	}
@@ -656,18 +659,17 @@ func writeTokenFile(token string) (string, func(), error) {
 }
 
 // resolveFleetKeyPath returns the absolute path of the Fleet signing private
-// key, preferring env TESLA_FLEET_KEY_FILE, then cfg.Fleet.PrivateKeyPath. No
-// existence check beyond stat: we want tesla-control's own error message to
-// surface when the key is unreadable for any other reason (mode mismatch
-// etc.). Returns a usage error when neither source is set.
+// key. Resolution order: env TESLA_FLEET_KEY_FILE, cfg.Fleet.PrivateKeyPath,
+// then fallback scan of ~/.tesla/*-private.pem. Returns a usage error when
+// no key is found or the key is not a valid private key PEM.
 func resolveFleetKeyPath(cfg *config.Config) (string, error) {
 	if v := strings.TrimSpace(os.Getenv(commandFleetKeyFileEnv)); v != "" {
 		abs, err := filepath.Abs(v)
 		if err != nil {
 			return "", fmt.Errorf("resolve %s=%q: %w", commandFleetKeyFileEnv, v, err)
 		}
-		if _, err := os.Stat(abs); err != nil {
-			return "", fmt.Errorf("%s=%q not readable: %w", commandFleetKeyFileEnv, abs, err)
+		if err := validatePrivateKeyPEM(abs); err != nil {
+			return "", fmt.Errorf("%s: %w", commandFleetKeyFileEnv, err)
 		}
 		return abs, nil
 	}
@@ -678,13 +680,47 @@ func resolveFleetKeyPath(cfg *config.Config) (string, error) {
 			if err != nil {
 				return "", fmt.Errorf("resolve config Fleet.PrivateKeyPath %q: %w", ft.PrivateKeyPath, err)
 			}
-			if _, err := os.Stat(abs); err != nil {
-				return "", fmt.Errorf("Fleet.PrivateKeyPath %q not readable: %w", abs, err)
+			if err := validatePrivateKeyPEM(abs); err != nil {
+				return "", fmt.Errorf("Fleet.PrivateKeyPath: %w", err)
 			}
 			return abs, nil
 		}
 	}
-	return "", fmt.Errorf("no Fleet signing key configured; set TESLA_FLEET_KEY_FILE or run `tesla auth fleet-template --gen-key` and store the path with `tesla auth fleet-register`")
+	// Fallback: scan ~/.tesla/ for valid *-private.pem files (fleet-template output).
+	home, homeErr := os.UserHomeDir()
+	if homeErr != nil || home == "" {
+		return "", fmt.Errorf("no Fleet signing key configured; set TESLA_FLEET_KEY_FILE or run `tesla auth fleet-template --gen-key` then `tesla auth fleet-register --key-file <path>`")
+	}
+	teslaDir := filepath.Join(home, ".tesla")
+	candidates := scanValidPrivateKeys(teslaDir)
+	if len(candidates) == 0 {
+		return "", fmt.Errorf("no Fleet signing key configured; set TESLA_FLEET_KEY_FILE or run `tesla auth fleet-template --gen-key` then `tesla auth fleet-register --key-file <path>`")
+	}
+	var domain string
+	var hasFleetCredentials bool
+	if cfg != nil {
+		ft := cfg.FleetTokens()
+		domain = strings.TrimSpace(ft.PublicKeyDomain)
+		hasFleetCredentials = ft.ClientID != "" || ft.AccessToken != ""
+	}
+	matched, err := matchCandidatesToDomain(teslaDir, candidates, domain)
+	if err != nil {
+		return "", fmt.Errorf("%w; set TESLA_FLEET_KEY_FILE=<path>", err)
+	}
+	if matched != "" {
+		return matched, nil
+	}
+	// No configured Fleet domain to bind against.
+	if len(candidates) == 1 {
+		// If Fleet credentials exist but no PublicKeyDomain, don't accept an
+		// unverified key — the registration flow should have set the domain.
+		if hasFleetCredentials {
+			return "", fmt.Errorf("Fleet credentials exist but PublicKeyDomain is not configured; cannot verify if %s matches the registered public key. Run `tesla auth fleet-register` to complete setup, or set TESLA_FLEET_KEY_FILE=<path>", candidates[0])
+		}
+		// No Fleet setup at all — accept sole candidate for backward compat.
+		return candidates[0], nil
+	}
+	return "", errMultipleCandidates(teslaDir, candidates, "Set TESLA_FLEET_KEY_FILE=<path> to select one.")
 }
 
 // fleetTokenRefreshSkew is how far ahead of the stored expiry the proactive
