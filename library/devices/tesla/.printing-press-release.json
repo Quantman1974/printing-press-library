@@ -2,17 +2,17 @@
   "schema_version": 1,
   "slug": "tesla",
   "cli_name": "tesla-pp-cli",
-  "version": "2026.9.1",
-  "released_at": "2026-09-02T10:23:06Z",
-  "source_commit": "44da7acdc0e1b06278127bfb34af82005f3f4371",
+  "version": "2026.9.2",
+  "released_at": "2026-09-02T19:26:27Z",
+  "source_commit": "da67de0b3b371d062deefd8e3e2ea95cb37f881d",
   "printing_press_version": "4.10.0",
   "run_id": "20260519-225351",
   "changes": [
     {
-      "title": "fix(tesla): fix agent onboarding dead paths",
-      "pr": 1904,
-      "url": "https://github.com/mvanhorn/printing-press-library/pull/1904",
-      "commit": "44da7acdc0e1b06278127bfb34af82005f3f4371"
+      "title": "fix(tesla): prefer Fleet over Hermes for owner-API commands",
+      "pr": 1907,
+      "url": "https://github.com/mvanhorn/printing-press-library/pull/1907",
+      "commit": "da67de0b3b371d062deefd8e3e2ea95cb37f881d"
     }
   ]
 }

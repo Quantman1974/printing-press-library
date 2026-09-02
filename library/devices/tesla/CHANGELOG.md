@@ -2,6 +2,10 @@
 
 This file is maintained by printing-press-library release automation. Do not hand-edit release sections in normal PRs.
 
+## 2026.9.2 - 2026-09-02
+
+- fix(tesla): prefer Fleet over Hermes for owner-API commands (#1907).
+
 ## 2026.9.1 - 2026-09-02
 
 - fix(tesla): fix agent onboarding dead paths (#1904).
