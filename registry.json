@@ -1994,9 +1994,9 @@
       "path": "library/other/ars-sicilia",
       "release": {
         "cli_name": "ars-sicilia-pp-cli",
-        "version": "2026.8.10",
-        "released_at": "2026-08-31T09:13:34Z",
-        "source_commit": "4846aeac70bdfc669ef2f2ecfd23187ec590adc8"
+        "version": "2026.9.1",
+        "released_at": "2026-09-02T09:26:47Z",
+        "source_commit": "5d0ab8327e37afa2b30749755cf2cda7a19cf9c4"
       },
       "printer": "aborruso",
       "printer_name": "aborruso",
@@ -10520,6 +10520,55 @@
         "env_vars": [],
         "mcp_ready": "partial",
         "spec_format": "internal"
+      }
+    },
+    {
+      "name": "googlehealth",
+      "category": "devices",
+      "api": "Google Health",
+      "description": "View and manage health and fitness metrics and measurement data from Fitbit, Pixel Watch",
+      "search_terms": [
+        "googlehealth",
+        "Google Health",
+        "googlehealth-pp-cli",
+        "View and manage health and fitness metrics and measurement data from Fitbit, Pixel Watch",
+        "Metric Trend Lines",
+        "trends",
+        "Per-metric trailing rolling-average trend lines with net first-to-last delta, de-noising day-to-day scale-weight and resting-HR whiplash",
+        "Goal Streaks",
+        "streaks",
+        "Current and longest consecutive-calendar-day streaks where a metric met a goal (e.g. 10k steps, resting HR under 60), with calendar gaps breaking the run",
+        "Cross-Metric Correlation",
+        "correlate",
+        "Pearson correlation plus best-lag scan between any two daily metrics (steps vs resting HR, sleep vs HRV) over locally synced history",
+        "Local SQLite Sync",
+        "sync",
+        "Mirror Google Health data points across data types into a local SQLite store for offline analysis",
+        "Full-Text Search",
+        "search",
+        "FTS5 full-text search across locally synced Google Health records"
+      ],
+      "path": "library/devices/googlehealth",
+      "printer": "coopdogGGs",
+      "printer_name": "ryanc00per",
+      "creator": {
+        "handle": "coopdogGGs",
+        "name": "ryanc00per"
+      },
+      "mcp": {
+        "binary": "googlehealth-pp-mcp",
+        "transports": [
+          "stdio",
+          "http"
+        ],
+        "tool_count": 25,
+        "public_tool_count": 0,
+        "auth_type": "bearer_token",
+        "env_vars": [
+          "GOOGLEHEALTH_OAUTH2C"
+        ],
+        "mcp_ready": "full",
+        "spec_format": "openapi3"
       }
     },
     {
@@ -24344,9 +24393,9 @@
       "path": "library/devices/tesla",
       "release": {
         "cli_name": "tesla-pp-cli",
-        "version": "2026.8.1",
-        "released_at": "2026-08-17T07:57:07Z",
-        "source_commit": "40363ac0936c4f406625f8399d8ad9b57673170e"
+        "version": "2026.9.2",
+        "released_at": "2026-09-02T19:26:27Z",
+        "source_commit": "da67de0b3b371d062deefd8e3e2ea95cb37f881d"
       },
       "printer": "mvanhorn",
       "printer_name": "Matt Van Horn",
