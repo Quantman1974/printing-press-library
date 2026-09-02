@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "slug": "bonusly",
+  "cli_name": "bonusly-pp-cli",
+  "version": "2026.9.1",
+  "released_at": "2026-09-02T09:18:50Z",
+  "source_commit": "3c61f2e49af6ef63831cb0a1f86ce48c1dcea5e0",
+  "printing_press_version": "4.30.1",
+  "run_id": "20260810-153232-4e95f81e",
+  "changes": [
+    {
+      "title": "feat(bonusly): fix broken user-lookup endpoints, validate mentions, require PAT-only auth",
+      "pr": 1899,
+      "url": "https://github.com/mvanhorn/printing-press-library/pull/1899",
+      "commit": "3c61f2e49af6ef63831cb0a1f86ce48c1dcea5e0"
+    }
+  ]
+}
