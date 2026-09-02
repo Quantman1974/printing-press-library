@@ -2,9 +2,17 @@
   "schema_version": 1,
   "slug": "googlehealth",
   "cli_name": "googlehealth-pp-cli",
-  "version": "",
-  "released_at": "",
-  "source_commit": "",
+  "version": "2026.9.1",
+  "released_at": "2026-09-02T20:59:14Z",
+  "source_commit": "5b10785a94e5a3ac516588033ef11c6d11676ab3",
   "printing_press_version": "4.24.0",
-  "run_id": "20260619-180224"
+  "run_id": "20260619-180224",
+  "changes": [
+    {
+      "title": "fix(googlehealth): harden live OAuth/sync behavior",
+      "pr": 1364,
+      "url": "https://github.com/mvanhorn/printing-press-library/pull/1364",
+      "commit": "5b10785a94e5a3ac516588033ef11c6d11676ab3"
+    }
+  ]
 }
