@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "slug": "bookmakersreview",
+  "cli_name": "bookmakersreview-pp-cli",
+  "version": "2026.9.1",
+  "released_at": "2026-09-02T09:23:11Z",
+  "source_commit": "9ec7a5a114a3523e649cf1615d49cf48611b4245",
+  "printing_press_version": "4.29.0",
+  "run_id": "20260901-001113-cd609973",
+  "changes": [
+    {
+      "title": "feat(bookmakersreview): add bookmakersreview",
+      "pr": 1901,
+      "url": "https://github.com/mvanhorn/printing-press-library/pull/1901",
+      "commit": "9ec7a5a114a3523e649cf1615d49cf48611b4245"
+    }
+  ]
+}
