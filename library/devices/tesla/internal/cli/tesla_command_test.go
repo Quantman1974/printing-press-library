@@ -13,6 +13,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"net/http"
@@ -125,8 +126,22 @@ func TestCommand_DefaultPrint_FleetUnlock(t *testing.T) {
 	flags, _ := commandTestSetup(t, []productEntry{
 		{VIN: "SNOWFLAKEVIN0001", DisplayName: "Snowflake", CommandSigning: "required"},
 	})
-	// Make Fleet "ready" via env so the picker prefers it for VCSEC.
-	t.Setenv("TESLA_FLEET_TOKEN", "fleet-bearer-xyz")
+	// Make Fleet fully dispatchable: usable (unexpired JWT) token + key +
+	// binary on PATH. Auto-pick is fail-closed, so the token must carry a
+	// parseable future exp claim.
+	t.Setenv("TESLA_FLEET_TOKEN", mintTestJWT(t, time.Now().Add(time.Hour)))
+
+	// Plant a real key file so resolveFleetKeyPath succeeds.
+	keyFile := commandTestKeyFile(t)
+	t.Setenv("TESLA_FLEET_KEY_FILE", keyFile)
+
+	// Plant a fake tesla-control on PATH so detectTeslaControlBinary resolves.
+	binDir := t.TempDir()
+	fakeBin := filepath.Join(binDir, teslaControlBinary)
+	if err := os.WriteFile(fakeBin, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write fake tesla-control: %v", err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	// Sentinel: tesla-control must NOT be invoked.
 	calls := 0
@@ -161,7 +176,8 @@ func TestCommand_Fleet_UnlockSend_InvokesTeslaControl(t *testing.T) {
 	flags, _ := commandTestSetup(t, []productEntry{
 		{VIN: "SNOWFLAKEVIN0001", DisplayName: "Snowflake", CommandSigning: "required"},
 	})
-	t.Setenv("TESLA_FLEET_TOKEN", "fleet-bearer-xyz")
+	// Usable (unexpired JWT) token: auto-pick is fail-closed on opaque strings.
+	t.Setenv("TESLA_FLEET_TOKEN", mintTestJWT(t, time.Now().Add(time.Hour)))
 
 	// Plant a real key file so resolveFleetKeyPath succeeds.
 	keyFile := commandTestKeyFile(t)
@@ -208,7 +224,9 @@ func TestCommand_Fleet_TokenFileShape(t *testing.T) {
 	flags, _ := commandTestSetup(t, []productEntry{
 		{VIN: "SNOWFLAKEVIN0001", DisplayName: "Snowflake", CommandSigning: "required"},
 	})
-	t.Setenv("TESLA_FLEET_TOKEN", "fleet-bearer-xyz")
+	// Usable (unexpired JWT) token: auto-pick is fail-closed on opaque strings.
+	fleetJWT := mintTestJWT(t, time.Now().Add(time.Hour))
+	t.Setenv("TESLA_FLEET_TOKEN", fleetJWT)
 
 	keyFile := commandTestKeyFile(t)
 	t.Setenv("TESLA_FLEET_KEY_FILE", keyFile)
@@ -263,8 +281,8 @@ func TestCommand_Fleet_TokenFileShape(t *testing.T) {
 	if !got.underTmp {
 		t.Errorf("token file %q is not under ~/.config/tesla-pp-cli/tmp/", got.tokenFile)
 	}
-	if got.token != "fleet-bearer-xyz" {
-		t.Errorf("token file content = %q, want fleet-bearer-xyz", got.token)
+	if got.token != fleetJWT {
+		t.Errorf("token file content = %q, want the env JWT", got.token)
 	}
 
 	// After the call returns the cleanup defer should have removed the file.
@@ -471,7 +489,10 @@ func TestCommand_Fleet_TeslaControlMissing(t *testing.T) {
 	// PATH points at an empty dir; ~/go/bin is under a temp home so absent.
 	t.Setenv("PATH", t.TempDir())
 
-	out, err := runCommandForTest(t, flags, []string{"unlock", "--vehicle", "Snowflake", "--send"})
+	// Use --via=fleet to explicitly request Fleet. With auto-pick, missing
+	// tesla-control would fall back to BLE (for VCSEC). The explicit override
+	// must error clearly about the missing binary.
+	out, err := runCommandForTest(t, flags, []string{"unlock", "--vehicle", "Snowflake", "--send", "--via", "fleet"})
 	if err == nil {
 		t.Fatalf("expected tesla-control-missing error, got nil; output=%s", out.String())
 	}
@@ -591,6 +612,13 @@ func TestCommand_SweepCommandTmp_RemovesStaleFiles(t *testing.T) {
 // isolates the reactive (401-driven) refresh path.
 func seedFleetSelfHeal(t *testing.T, flags *rootFlags, expiry time.Time, refreshOK bool) *int {
 	t.Helper()
+	return seedFleetSelfHealWithAccess(t, flags, "stale-fleet-access", expiry, refreshOK)
+}
+
+// seedFleetSelfHealWithAccess is seedFleetSelfHeal with a caller-chosen stored
+// access token. Pass "" for a refresh-token-only config (no access token yet).
+func seedFleetSelfHealWithAccess(t *testing.T, flags *rootFlags, access string, expiry time.Time, refreshOK bool) *int {
+	t.Helper()
 
 	cfg, err := config.Load(flags.configPath)
 	if err != nil {
@@ -599,7 +627,7 @@ func seedFleetSelfHeal(t *testing.T, flags *rootFlags, expiry time.Time, refresh
 	keyFile := commandTestKeyFile(t)
 	// clientID + refreshToken populate everything tryRefreshFleetToken needs;
 	// stale access token is what tesla-control will reject with a 401.
-	if err := cfg.SaveFleetTokens("fleet-cid", "fleet-csec", "stale-fleet-access", "fleet-refresh-tok", expiry, "keys.example.com", keyFile); err != nil {
+	if err := cfg.SaveFleetTokens("fleet-cid", "fleet-csec", access, "fleet-refresh-tok", expiry, "keys.example.com", keyFile); err != nil {
 		t.Fatalf("SaveFleetTokens: %v", err)
 	}
 	t.Setenv("TESLA_FLEET_KEY_FILE", keyFile)
@@ -774,6 +802,327 @@ func TestCommand_Fleet_NonAuthError_NoRefresh(t *testing.T) {
 	}
 }
 
+// TestCommand_AutoPick_RefreshWithoutClientID_FallsBackToHermes: a stored
+// refresh token whose grant cannot POST (no client ID anywhere) is not auth
+// evidence. With key + binary present and Hermes running, via=auto must route
+// the owner-API command to Hermes instead of picking Fleet and dying on
+// "no Fleet client_id stored".
+func TestCommand_AutoPick_RefreshWithoutClientID_FallsBackToHermes(t *testing.T) {
+	flags, _ := commandTestSetup(t, []productEntry{
+		{VIN: "SNOWFLAKEVIN0001", DisplayName: "Snowflake", CommandSigning: "required"},
+	})
+	t.Setenv("TESLA_FLEET_TOKEN", "")
+	t.Setenv("TESLA_FLEET_CLIENT_ID", "")
+
+	// Refresh token stored with no client ID: the refresh grant's
+	// preconditions are not met, so Fleet cannot authenticate.
+	cfg, err := config.Load(flags.configPath)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if err := cfg.SaveFleetTokens("", "", "", "fleet-refresh-tok", time.Time{}, "", ""); err != nil {
+		t.Fatalf("SaveFleetTokens: %v", err)
+	}
+
+	// Key + binary both present: the only missing leg is mintable credentials.
+	keyFile := commandTestKeyFile(t)
+	t.Setenv("TESLA_FLEET_KEY_FILE", keyFile)
+	binDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(binDir, teslaControlBinary), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("plant tesla-control: %v", err)
+	}
+	t.Setenv("PATH", binDir)
+	t.Setenv(commandHermesPortEnv, "9999") // relay "running"
+
+	out, err := runCommandForTest(t, flags, []string{"honk_horn", "--vehicle", "Snowflake"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v\n%s", err, out.String())
+	}
+	body := out.String()
+	if !strings.Contains(body, `"path": "hermes"`) && !strings.Contains(body, `"path":"hermes"`) {
+		t.Errorf("expected path=hermes fallback, got: %s", body)
+	}
+}
+
+// TestCommand_Fleet_RefreshOnlyConfig_MintsBeforeDispatch: a config holding
+// only a Fleet refresh token (no access token) counts as dispatch-ready for
+// the auto-picker, so dispatch must honor the same contract: mint the first
+// access token from the refresh token instead of erroring
+// "Fleet API not configured".
+func TestCommand_Fleet_RefreshOnlyConfig_MintsBeforeDispatch(t *testing.T) {
+	flags, _ := commandTestSetup(t, []productEntry{
+		{VIN: "SNOWFLAKEVIN0001", DisplayName: "Snowflake", CommandSigning: "required"},
+	})
+	refreshes := seedFleetSelfHealWithAccess(t, flags, "", time.Time{}, true)
+
+	var gotToken string
+	orig := runTeslaControlSubprocessFn
+	t.Cleanup(func() { runTeslaControlSubprocessFn = orig })
+	runTeslaControlSubprocessFn = func(ctx context.Context, bin string, args []string) (string, string, error) {
+		for i, a := range args {
+			if a == "-token-file" && i+1 < len(args) {
+				if data, err := os.ReadFile(args[i+1]); err == nil {
+					gotToken = string(data)
+				}
+			}
+		}
+		return "command succeeded\n", "", nil
+	}
+
+	out, err := runCommandForTest(t, flags, []string{"unlock", "--vehicle", "Snowflake", "--send"})
+	if err != nil {
+		t.Fatalf("refresh-only config should mint and dispatch, got error: %v\n%s", err, out.String())
+	}
+	if *refreshes != 1 {
+		t.Errorf("expected exactly 1 mint from the refresh token, got %d", *refreshes)
+	}
+	if gotToken != "fresh-fleet-access" {
+		t.Errorf("tesla-control token = %q, want the freshly-minted access token", gotToken)
+	}
+	if !strings.Contains(out.String(), `"path": "fleet"`) && !strings.Contains(out.String(), `"path":"fleet"`) {
+		t.Errorf("expected path=fleet, got: %s", out.String())
+	}
+}
+
+// TestCommand_Fleet_RefreshOnlyMintFails_AutoFallsBackToHermes: a failed
+// initial mint is an auth failure, so the live-call backstop applies to it
+// exactly as to a post-dispatch 401. Refresh-only credentials whose grant is
+// dead must not strand an auto-routed owner-API command that a running Hermes
+// relay can carry — and tesla-control must never run without a token.
+func TestCommand_Fleet_RefreshOnlyMintFails_AutoFallsBackToHermes(t *testing.T) {
+	flags, _ := commandTestSetup(t, []productEntry{
+		{VIN: "SNOWFLAKEVIN0001", DisplayName: "Snowflake", CommandSigning: "required"},
+	})
+	refreshes := seedFleetSelfHealWithAccess(t, flags, "", time.Time{}, false) // dead grant
+
+	calls := 0
+	orig := runTeslaControlSubprocessFn
+	t.Cleanup(func() { runTeslaControlSubprocessFn = orig })
+	runTeslaControlSubprocessFn = func(ctx context.Context, bin string, args []string) (string, string, error) {
+		calls++
+		return "", "", nil
+	}
+
+	t.Setenv(commandHermesPortEnv, "9999") // relay "running"
+	hermesCalls := hijackHermesSuccess(t)
+
+	out, err := runCommandForTest(t, flags, []string{"honk_horn", "--vehicle", "Snowflake", "--send"})
+	if err != nil {
+		t.Fatalf("expected Hermes fallback success after failed mint, got error: %v\n%s", err, out.String())
+	}
+	if *refreshes != 1 {
+		t.Errorf("expected exactly 1 mint attempt, got %d", *refreshes)
+	}
+	if calls != 0 {
+		t.Errorf("tesla-control must not run without a token, got %d calls", calls)
+	}
+	if *hermesCalls != 1 {
+		t.Errorf("expected exactly 1 Hermes dispatch, got %d", *hermesCalls)
+	}
+	body := out.String()
+	if !strings.Contains(body, `"path": "hermes"`) && !strings.Contains(body, `"path":"hermes"`) {
+		t.Errorf("expected path=hermes in fallback output, got: %s", body)
+	}
+}
+
+// TestCommand_Fleet_RefreshOnlyConfig_MintFails_ErrorsClearly: when the config
+// is refresh-token-only, the mint fails, and the Hermes backstop is not
+// applicable (VCSEC command, no relay), dispatch surfaces the refresh failure
+// with fleet-login guidance (not a generic "not configured") and never invokes
+// tesla-control without a token.
+func TestCommand_Fleet_RefreshOnlyConfig_MintFails_ErrorsClearly(t *testing.T) {
+	flags, _ := commandTestSetup(t, []productEntry{
+		{VIN: "SNOWFLAKEVIN0001", DisplayName: "Snowflake", CommandSigning: "required"},
+	})
+	refreshes := seedFleetSelfHealWithAccess(t, flags, "", time.Time{}, false)
+
+	calls := 0
+	orig := runTeslaControlSubprocessFn
+	t.Cleanup(func() { runTeslaControlSubprocessFn = orig })
+	runTeslaControlSubprocessFn = func(ctx context.Context, bin string, args []string) (string, string, error) {
+		calls++
+		return "", "", nil
+	}
+
+	out, err := runCommandForTest(t, flags, []string{"unlock", "--vehicle", "Snowflake", "--send"})
+	if err == nil {
+		t.Fatalf("expected mint-failure error, got success: %s", out.String())
+	}
+	if *refreshes != 1 {
+		t.Errorf("expected exactly 1 refresh attempt, got %d", *refreshes)
+	}
+	if calls != 0 {
+		t.Errorf("tesla-control must not run without a token, got %d calls", calls)
+	}
+	if !strings.Contains(err.Error(), "Fleet refresh failed") || !strings.Contains(err.Error(), "fleet-login") {
+		t.Errorf("expected clear refresh-failure error with fleet-login guidance, got: %v", err)
+	}
+	if !errIsUsage(err) {
+		t.Errorf("expected usage error (exit 2), got: %v", err)
+	}
+}
+
+// hijackHermesSuccess points runHermesHTTPClientFn at an in-process stub that
+// records calls and returns HTTP 200. Returns the call counter.
+func hijackHermesSuccess(t *testing.T) *int {
+	t.Helper()
+	calls := 0
+	orig := runHermesHTTPClientFn
+	t.Cleanup(func() { runHermesHTTPClientFn = orig })
+	runHermesHTTPClientFn = func(ctx context.Context, endpoint, bearer string, body []byte) (int, string, error) {
+		calls++
+		return 200, `{"response":{"result":true,"reason":""}}`, nil
+	}
+	return &calls
+}
+
+// TestCommand_Fleet_AuthFail_AutoFallsBackToHermes: the live-call backstop.
+// Credentials that pass every offline check (future recorded expiry, refresh
+// token, client ID, key, binary) can still be revoked or invalidly signed —
+// only Tesla's rejection proves it. When via=auto picked Fleet, the 401
+// persists after the bounded refresh retry, and a Hermes relay is running,
+// the owner-API command must reroute through Hermes and succeed.
+func TestCommand_Fleet_AuthFail_AutoFallsBackToHermes(t *testing.T) {
+	flags, _ := commandTestSetup(t, []productEntry{
+		{VIN: "SNOWFLAKEVIN0001", DisplayName: "Snowflake", CommandSigning: "required"},
+	})
+	refreshes := seedFleetSelfHeal(t, flags, time.Now().Add(time.Hour), true)
+
+	calls, stub := auth401Stub(t, -1) // always 401: original + post-refresh retry
+	orig := runTeslaControlSubprocessFn
+	t.Cleanup(func() { runTeslaControlSubprocessFn = orig })
+	runTeslaControlSubprocessFn = stub
+
+	t.Setenv(commandHermesPortEnv, "9999") // relay "running"
+	hermesCalls := hijackHermesSuccess(t)
+
+	out, err := runCommandForTest(t, flags, []string{"honk_horn", "--vehicle", "Snowflake", "--send"})
+	if err != nil {
+		t.Fatalf("expected Hermes fallback success, got error: %v\n%s", err, out.String())
+	}
+	if *refreshes != 1 {
+		t.Errorf("expected exactly 1 refresh attempt before falling back, got %d", *refreshes)
+	}
+	if *calls != 2 {
+		t.Errorf("expected 2 tesla-control calls (401 then retry) before falling back, got %d", *calls)
+	}
+	if *hermesCalls != 1 {
+		t.Errorf("expected exactly 1 Hermes dispatch, got %d", *hermesCalls)
+	}
+	body := out.String()
+	if !strings.Contains(body, `"path": "hermes"`) && !strings.Contains(body, `"path":"hermes"`) {
+		t.Errorf("expected path=hermes in fallback output, got: %s", body)
+	}
+}
+
+// TestCommand_Fleet_RevokedEnvJWT_AutoFallsBackToHermes pins the exact gap no
+// offline check can close: TESLA_FLEET_TOKEN is a JWT whose payload carries a
+// future exp (passes jwtExpiry and every static readiness leg), but Tesla
+// rejects it — revoked or invalidly signed. With no stored refresh token the
+// reactive refresh cannot mint, so the live-call backstop must reroute the
+// owner-API command through the running Hermes relay.
+func TestCommand_Fleet_RevokedEnvJWT_AutoFallsBackToHermes(t *testing.T) {
+	flags, _ := commandTestSetup(t, []productEntry{
+		{VIN: "SNOWFLAKEVIN0001", DisplayName: "Snowflake", CommandSigning: "required"},
+	})
+	// Offline-valid env token: JWT shape, future exp. Revocation is invisible
+	// to jwtExpiry, so readiness marks Fleet dispatchable.
+	t.Setenv("TESLA_FLEET_TOKEN", mintTestJWT(t, time.Now().Add(time.Hour)))
+
+	keyFile := commandTestKeyFile(t)
+	t.Setenv("TESLA_FLEET_KEY_FILE", keyFile)
+	binDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(binDir, teslaControlBinary), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("plant tesla-control: %v", err)
+	}
+	t.Setenv("PATH", binDir)
+
+	// Tesla rejects the token: tesla-control 401s. No stored refresh token,
+	// so the reactive refresh fails before any network call and cannot mask
+	// the rejection.
+	calls, stub := auth401Stub(t, -1)
+	orig := runTeslaControlSubprocessFn
+	t.Cleanup(func() { runTeslaControlSubprocessFn = orig })
+	runTeslaControlSubprocessFn = stub
+
+	t.Setenv(commandHermesPortEnv, "9999") // relay "running"
+	hermesCalls := hijackHermesSuccess(t)
+
+	out, err := runCommandForTest(t, flags, []string{"honk_horn", "--vehicle", "Snowflake", "--send"})
+	if err != nil {
+		t.Fatalf("expected Hermes fallback success for revoked env JWT, got error: %v\n%s", err, out.String())
+	}
+	if *calls != 1 {
+		t.Errorf("expected 1 tesla-control call (no refresh retry without a refresh token), got %d", *calls)
+	}
+	if *hermesCalls != 1 {
+		t.Errorf("expected exactly 1 Hermes dispatch, got %d", *hermesCalls)
+	}
+	body := out.String()
+	if !strings.Contains(body, `"path": "hermes"`) && !strings.Contains(body, `"path":"hermes"`) {
+		t.Errorf("expected path=hermes in fallback output, got: %s", body)
+	}
+}
+
+// TestCommand_Fleet_AuthFail_ViaFleetExplicit_NoHermesFallback: the explicit
+// --via=fleet override must never silently switch transports — a persistent
+// auth failure surfaces as the Fleet error even with a healthy relay running.
+func TestCommand_Fleet_AuthFail_ViaFleetExplicit_NoHermesFallback(t *testing.T) {
+	flags, _ := commandTestSetup(t, []productEntry{
+		{VIN: "SNOWFLAKEVIN0001", DisplayName: "Snowflake", CommandSigning: "required"},
+	})
+	seedFleetSelfHeal(t, flags, time.Now().Add(time.Hour), true)
+
+	_, stub := auth401Stub(t, -1)
+	orig := runTeslaControlSubprocessFn
+	t.Cleanup(func() { runTeslaControlSubprocessFn = orig })
+	runTeslaControlSubprocessFn = stub
+
+	t.Setenv(commandHermesPortEnv, "9999")
+	hermesCalls := hijackHermesSuccess(t)
+
+	out, err := runCommandForTest(t, flags, []string{"honk_horn", "--vehicle", "Snowflake", "--send", "--via", "fleet"})
+	if err == nil {
+		t.Fatalf("expected Fleet auth error for explicit --via=fleet, got success: %s", out.String())
+	}
+	if *hermesCalls != 0 {
+		t.Errorf("explicit --via=fleet must not reroute to Hermes, got %d Hermes calls", *hermesCalls)
+	}
+	if !strings.Contains(out.String(), "401") {
+		t.Errorf("expected the Fleet 401 surfaced, got: %s", out.String())
+	}
+}
+
+// TestCommand_Fleet_NonAuthError_NoHermesFallback: the backstop is strictly
+// auth-gated. A sleeping car is not a credential defect; rerouting would not
+// help and risks double-sending, so the Fleet error surfaces unchanged.
+func TestCommand_Fleet_NonAuthError_NoHermesFallback(t *testing.T) {
+	flags, _ := commandTestSetup(t, []productEntry{
+		{VIN: "SNOWFLAKEVIN0001", DisplayName: "Snowflake", CommandSigning: "required"},
+	})
+	refreshes := seedFleetSelfHeal(t, flags, time.Now().Add(time.Hour), true)
+
+	orig := runTeslaControlSubprocessFn
+	t.Cleanup(func() { runTeslaControlSubprocessFn = orig })
+	runTeslaControlSubprocessFn = func(ctx context.Context, bin string, args []string) (string, string, error) {
+		return "", "Error: vehicle is asleep; wake it first\n", &exitErr{code: 1}
+	}
+
+	t.Setenv(commandHermesPortEnv, "9999")
+	hermesCalls := hijackHermesSuccess(t)
+
+	out, err := runCommandForTest(t, flags, []string{"honk_horn", "--vehicle", "Snowflake", "--send"})
+	if err == nil {
+		t.Fatalf("expected sleeping-car error, got success: %s", out.String())
+	}
+	if *hermesCalls != 0 {
+		t.Errorf("non-auth failure must not reroute to Hermes, got %d Hermes calls", *hermesCalls)
+	}
+	if *refreshes != 0 {
+		t.Errorf("non-auth failure must not refresh, got %d", *refreshes)
+	}
+}
+
 // TestIsFleetAuthError covers the auth-vs-not classification table (KD2).
 func TestIsFleetAuthError(t *testing.T) {
 	someErr := &exitErr{code: 1}
@@ -913,6 +1262,286 @@ func TestFleetTokenNeedsProactiveRefresh(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestCommandFleetTokenUsable verifies the fail-closed auth-readiness check:
+// only provable evidence counts (future JWT exp, recorded future expiry, or a
+// mintable refresh grant: refresh token + client ID). Nonempty-but-
+// unverifiable tokens are NOT usable, so via=auto can fall back to Hermes
+// instead of failing Fleet auth mid-dispatch.
+func TestCommandFleetTokenUsable(t *testing.T) {
+	// Pin the client-ID env var so ambient values cannot leak into the
+	// refresh-capability leg; specific cases override it below.
+	t.Setenv("TESLA_FLEET_CLIENT_ID", "")
+
+	jwtValid := mintTestJWT(t, time.Now().Add(time.Hour))
+	jwtExpired := mintTestJWT(t, time.Now().Add(-time.Hour))
+
+	cases := []struct {
+		name string
+		ft   config.FleetConfig
+		// noClientID saves the config without a client ID, breaking the
+		// refresh grant's preconditions even when a refresh token exists.
+		noClientID bool
+		// envClientID, when set, provides the client ID via env instead.
+		envClientID string
+		want        bool
+	}{
+		{name: "no token", ft: config.FleetConfig{}, want: false},
+		{name: "opaque token with recorded future expiry", ft: config.FleetConfig{
+			AccessToken: "tok",
+			TokenExpiry: time.Now().Add(time.Hour),
+		}, want: true},
+		{name: "opaque token with recorded future expiry and refresh", ft: config.FleetConfig{
+			AccessToken:  "tok",
+			RefreshToken: "ref",
+			TokenExpiry:  time.Now().Add(time.Hour),
+		}, want: true},
+		{name: "expired token with refresh (can auto-refresh)", ft: config.FleetConfig{
+			AccessToken:  "tok",
+			RefreshToken: "ref",
+			TokenExpiry:  time.Now().Add(-time.Hour),
+		}, want: true},
+		{name: "expired token without refresh (cannot authenticate)", ft: config.FleetConfig{
+			AccessToken: "tok",
+			TokenExpiry: time.Now().Add(-time.Hour),
+		}, want: false},
+		{name: "near-expiry within skew with refresh", ft: config.FleetConfig{
+			AccessToken:  "tok",
+			RefreshToken: "ref",
+			TokenExpiry:  time.Now().Add(30 * time.Second), // within 60s skew
+		}, want: true},
+		{name: "near-expiry within skew without refresh", ft: config.FleetConfig{
+			AccessToken: "tok",
+			TokenExpiry: time.Now().Add(30 * time.Second), // within 60s skew
+		}, want: false},
+		{name: "opaque token with unknown expiry and no refresh is NOT usable (fail-closed)", ft: config.FleetConfig{
+			AccessToken: "tok",
+		}, want: false},
+		{name: "opaque token with unknown expiry but refresh IS usable", ft: config.FleetConfig{
+			AccessToken:  "tok",
+			RefreshToken: "ref",
+		}, want: true},
+		{name: "refresh token alone (no access token) is usable", ft: config.FleetConfig{
+			RefreshToken: "ref",
+		}, want: true},
+		{name: "refresh token without client ID is NOT usable (grant cannot POST)", ft: config.FleetConfig{
+			RefreshToken: "ref",
+		}, noClientID: true, want: false},
+		{name: "refresh token with env client ID IS usable", ft: config.FleetConfig{
+			RefreshToken: "ref",
+		}, noClientID: true, envClientID: "cid-from-env", want: true},
+		{name: "expired token with refresh but no client ID is NOT usable", ft: config.FleetConfig{
+			AccessToken:  "tok",
+			RefreshToken: "ref",
+			TokenExpiry:  time.Now().Add(-time.Hour),
+		}, noClientID: true, want: false},
+		{name: "stored JWT with future exp and no recorded expiry", ft: config.FleetConfig{
+			AccessToken: jwtValid,
+		}, want: true},
+		{name: "stored expired JWT without refresh is NOT usable", ft: config.FleetConfig{
+			AccessToken: jwtExpired,
+		}, want: false},
+		{name: "stored expired JWT with refresh IS usable", ft: config.FleetConfig{
+			AccessToken:  jwtExpired,
+			RefreshToken: "ref",
+		}, want: true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if c.envClientID != "" {
+				t.Setenv("TESLA_FLEET_CLIENT_ID", c.envClientID)
+			}
+			flags := commandTestFlags(t)
+			cfg, err := config.Load(flags.configPath)
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if c.ft.AccessToken != "" || c.ft.RefreshToken != "" {
+				clientID := "cid"
+				if c.noClientID {
+					clientID = ""
+				}
+				if err := cfg.SaveFleetTokens(clientID, "", c.ft.AccessToken, c.ft.RefreshToken, c.ft.TokenExpiry, "", ""); err != nil {
+					t.Fatalf("SaveFleetTokens: %v", err)
+				}
+			}
+			if got := commandFleetTokenUsable(cfg); got != c.want {
+				t.Errorf("commandFleetTokenUsable = %v, want %v", got, c.want)
+			}
+		})
+	}
+
+	// Env var token shapes. Fail-closed: only a parseable future exp claim
+	// counts; every other shape needs a mintable stored refresh grant.
+	envCases := []struct {
+		name  string
+		token string
+		// storedRefresh seeds a refresh token in config before the check.
+		storedRefresh bool
+		// noClientID saves that refresh token without a client ID.
+		noClientID bool
+		want       bool
+	}{
+		{name: "opaque env token without refresh is NOT usable (fail-closed)", token: "not-a-jwt-token", want: false},
+		{name: "opaque env token with stored refresh IS usable", token: "not-a-jwt-token", storedRefresh: true, want: true},
+		{name: "env JWT with valid future exp is usable", token: jwtValid, want: true},
+		{name: "env JWT missing exp claim without refresh is NOT usable", token: mintTestJWTNoExp(t), want: false},
+		{name: "env JWT missing exp claim with stored refresh IS usable", token: mintTestJWTNoExp(t), storedRefresh: true, want: true},
+		{name: "malformed env JWT without refresh is NOT usable", token: "header.!!!not-base64!!!.sig", want: false},
+		{name: "expired env JWT without refresh is NOT usable", token: jwtExpired, want: false},
+		{name: "expired env JWT with stored refresh IS usable", token: jwtExpired, storedRefresh: true, want: true},
+		{name: "expired env JWT with refresh but no client ID is NOT usable", token: jwtExpired, storedRefresh: true, noClientID: true, want: false},
+	}
+	for _, c := range envCases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Setenv("TESLA_FLEET_TOKEN", c.token)
+			flags := commandTestFlags(t)
+			cfg, err := config.Load(flags.configPath)
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if c.storedRefresh {
+				clientID := "cid"
+				if c.noClientID {
+					clientID = ""
+				}
+				if err := cfg.SaveFleetTokens(clientID, "", "", "refresh-token", time.Time{}, "", ""); err != nil {
+					t.Fatalf("SaveFleetTokens: %v", err)
+				}
+			}
+			if got := commandFleetTokenUsable(cfg); got != c.want {
+				t.Errorf("commandFleetTokenUsable = %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
+// mintTestJWT creates a minimal JWT with the given expiry for testing.
+func mintTestJWT(t *testing.T, exp time.Time) string {
+	t.Helper()
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"RS256","typ":"JWT"}`))
+	claims := map[string]any{
+		"aud": "https://fleet-api.prd.na.vn.cloud.tesla.com",
+		"exp": exp.Unix(),
+	}
+	cb, _ := json.Marshal(claims)
+	payload := base64.RawURLEncoding.EncodeToString(cb)
+	sig := base64.RawURLEncoding.EncodeToString([]byte("test-signature"))
+	return header + "." + payload + "." + sig
+}
+
+// mintTestJWTNoExp creates a JWT-shaped token whose payload has no exp claim.
+func mintTestJWTNoExp(t *testing.T) string {
+	t.Helper()
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"RS256","typ":"JWT"}`))
+	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"aud":"https://fleet-api.prd.na.vn.cloud.tesla.com"}`))
+	sig := base64.RawURLEncoding.EncodeToString([]byte("test-signature"))
+	return header + "." + payload + "." + sig
+}
+
+// TestCommand_AutoPick_FailClosedTokenShapes drives the real router end to
+// end: signing key present, tesla-control on PATH, Hermes relay "running",
+// owner-API command, via=auto. Every token shape whose validity cannot be
+// proven (opaque, missing exp, malformed, expired without refresh) must NOT
+// pick Fleet — the command routes to the running Hermes relay instead. A
+// provably fresh JWT must still pick Fleet even with Hermes running.
+func TestCommand_AutoPick_FailClosedTokenShapes(t *testing.T) {
+	cases := []struct {
+		name     string
+		token    func(t *testing.T) string
+		wantPath string
+	}{
+		{"opaque env token -> hermes", func(t *testing.T) string {
+			return "fleet-bearer-opaque"
+		}, "hermes"},
+		{"env JWT missing exp claim -> hermes", func(t *testing.T) string {
+			return mintTestJWTNoExp(t)
+		}, "hermes"},
+		{"malformed env JWT -> hermes", func(t *testing.T) string {
+			return "header.!!!not-base64!!!.sig"
+		}, "hermes"},
+		{"expired env JWT without refresh -> hermes", func(t *testing.T) string {
+			return mintTestJWT(t, time.Now().Add(-time.Hour))
+		}, "hermes"},
+		{"valid unexpired env JWT -> fleet (Fleet-first holds)", func(t *testing.T) string {
+			return mintTestJWT(t, time.Now().Add(time.Hour))
+		}, "fleet"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			flags, _ := commandTestSetup(t, []productEntry{
+				{VIN: "SNOWFLAKEVIN0001", DisplayName: "Snowflake", CommandSigning: "required"},
+			})
+			t.Setenv("TESLA_FLEET_TOKEN", c.token(t))
+
+			// Signing key + tesla-control both present: the only leg that
+			// varies across cases is whether the token can authenticate.
+			keyFile := commandTestKeyFile(t)
+			t.Setenv("TESLA_FLEET_KEY_FILE", keyFile)
+			binDir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(binDir, teslaControlBinary), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+				t.Fatalf("plant tesla-control: %v", err)
+			}
+			t.Setenv("PATH", binDir)
+
+			// Hermes relay "running" (env short-circuit).
+			t.Setenv(commandHermesPortEnv, "9999")
+
+			// Default-print (no --send) surfaces the picked path without
+			// dispatching anything.
+			out, err := runCommandForTest(t, flags, []string{"honk_horn", "--vehicle", "Snowflake"})
+			if err != nil {
+				t.Fatalf("unexpected error: %v\n%s", err, out.String())
+			}
+			body := out.String()
+			wantJSON := `"path": "` + c.wantPath + `"`
+			if !strings.Contains(body, wantJSON) && !strings.Contains(body, `"path":"`+c.wantPath+`"`) {
+				t.Errorf("expected %s, got: %s", wantJSON, body)
+			}
+		})
+	}
+}
+
+// TestJwtExpiry verifies the jwtExpiry helper extracts exp claims correctly.
+func TestJwtExpiry(t *testing.T) {
+	t.Run("valid JWT with exp", func(t *testing.T) {
+		exp := time.Now().Add(time.Hour).Truncate(time.Second)
+		jwt := mintTestJWT(t, exp)
+		got, ok := jwtExpiry(jwt)
+		if !ok {
+			t.Fatal("jwtExpiry returned ok=false for valid JWT")
+		}
+		if !got.Equal(exp) {
+			t.Errorf("jwtExpiry = %v, want %v", got, exp)
+		}
+	})
+
+	t.Run("not a JWT (wrong segment count)", func(t *testing.T) {
+		_, ok := jwtExpiry("not-a-jwt")
+		if ok {
+			t.Error("jwtExpiry returned ok=true for non-JWT")
+		}
+	})
+
+	t.Run("JWT without exp claim", func(t *testing.T) {
+		header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"RS256"}`))
+		payload := base64.RawURLEncoding.EncodeToString([]byte(`{"aud":"test"}`))
+		sig := base64.RawURLEncoding.EncodeToString([]byte("sig"))
+		jwt := header + "." + payload + "." + sig
+		_, ok := jwtExpiry(jwt)
+		if ok {
+			t.Error("jwtExpiry returned ok=true for JWT without exp")
+		}
+	})
+
+	t.Run("invalid base64 payload", func(t *testing.T) {
+		jwt := "header.!!!invalid-base64!!!.sig"
+		_, ok := jwtExpiry(jwt)
+		if ok {
+			t.Error("jwtExpiry returned ok=true for invalid base64")
+		}
+	})
 }
 
 // TestNewClient_ReadPathSelfHealsInBothModes guards that the read client always

@@ -44,15 +44,15 @@ func TestSignedPaths_PickPath(t *testing.T) {
 			via:          "auto",
 			wantPath:     PathREST,
 		},
-		// Signed-cmd cars: KD6 defaults.
+		// Signed-cmd cars: Fleet-first defaults.
 		{
-			name:          "signed_cmd + owner-api + Fleet + relay running -> hermes (KD6 cost-honest default)",
+			name:          "signed_cmd + owner-api + Fleet + relay running -> fleet (Fleet-first default)",
 			cmdClass:      ClassOwnerAPI,
 			vehicleClass:  VehicleClassSignedCmd,
 			fleetReady:    true,
 			hermesRunning: true,
 			via:           "auto",
-			wantPath:      PathHermes,
+			wantPath:      PathFleet,
 		},
 		{
 			name:          "signed_cmd + owner-api + Fleet + relay NOT running -> fleet",
@@ -62,6 +62,15 @@ func TestSignedPaths_PickPath(t *testing.T) {
 			hermesRunning: false,
 			via:           "auto",
 			wantPath:      PathFleet,
+		},
+		{
+			name:          "signed_cmd + owner-api + Fleet not dispatchable + relay running -> hermes (fallback)",
+			cmdClass:      ClassOwnerAPI,
+			vehicleClass:  VehicleClassSignedCmd,
+			fleetReady:    false, // e.g., token present but key/binary missing
+			hermesRunning: true,
+			via:           "auto",
+			wantPath:      PathHermes,
 		},
 		{
 			name:          "signed_cmd + owner-api + only BLE (no Fleet, no relay) -> ble",
@@ -110,20 +119,19 @@ func TestSignedPaths_PickPath(t *testing.T) {
 		},
 		// Explicit overrides.
 		{
-			name:         "--via=fleet without Fleet creds -> error",
+			name:         "--via=fleet always returns fleet (dispatch validates token/key/binary)",
 			cmdClass:     ClassOwnerAPI,
 			vehicleClass: VehicleClassSignedCmd,
-			fleetReady:   false,
+			fleetReady:   false, // no dispatch capability, but explicit --via=fleet tries anyway
 			via:          "fleet",
-			wantErr:      true,
-			wantErrSub:   "Fleet API not configured",
+			wantPath:     PathFleet,
 		},
 		{
-			name:          "--via=fleet with Fleet creds -> fleet",
+			name:          "--via=fleet with full dispatch capability -> fleet",
 			cmdClass:      ClassOwnerAPI,
 			vehicleClass:  VehicleClassSignedCmd,
 			fleetReady:    true,
-			hermesRunning: true, // would prefer hermes on auto, but we forced fleet
+			hermesRunning: true,
 			via:           "fleet",
 			wantPath:      PathFleet,
 		},
@@ -185,6 +193,14 @@ func TestSignedPaths_PickPath(t *testing.T) {
 			vehicleClass: VehicleClassRESTFriendly,
 			via:          "ble",
 			wantPath:     PathBLE,
+		},
+		{
+			name:         "rest_friendly + --via=fleet always returns fleet (dispatch validates)",
+			cmdClass:     ClassOwnerAPI,
+			vehicleClass: VehicleClassRESTFriendly,
+			fleetReady:   false, // no dispatch capability, but explicit --via=fleet tries anyway
+			via:          "fleet",
+			wantPath:     PathFleet,
 		},
 		{
 			name:         "rest_friendly + --via=hermes without relay -> error",

@@ -1,10 +1,11 @@
 // tesla command — unified router that picks the right transport per vehicle
 // and per command, with explicit --via override and an opt-in --send flag.
 //
-// Defaults follow KD6 in 2026-05-22-001:
+// Defaults:
 //   - REST-friendly vehicle: legacy owner-API REST (unchanged from v0.1)
-//   - signed-cmd vehicle, owner-API command, Hermes relay running: Hermes
-//   - signed-cmd vehicle, owner-API command, Fleet creds present: Fleet
+//   - signed-cmd vehicle, Fleet enrolled: Fleet for all commands
+//   - signed-cmd vehicle, Fleet not enrolled, Hermes running: Hermes
+//     (infotainment only)
 //   - signed-cmd vehicle, VCSEC command: Fleet (Hermes cannot VCSEC)
 //   - signed-cmd vehicle, wake_up: Fleet (Hermes wake_up bug)
 //   - no internet path available: print the tesla-control -ble recipe
@@ -24,6 +25,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -97,16 +99,17 @@ func newCommandCmd(flags *rootFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "command <name> [--vehicle NAME-OR-VIN] [--via=auto|fleet|hermes|ble] [--send] [extra-args...]",
 		Short: "Send a Tesla command via the best-available signed path",
-		Long: `Unified router for Tesla vehicle commands. Picks the cheapest available
+		Long: `Unified router for Tesla vehicle commands. Picks the best available
 internet path per command:
 
   - REST-friendly vehicles (pre-2021 S/X, pre-late-2021 3/Y) -> legacy REST
-  - signed-cmd vehicles, owner-API command (charge, climate, honk, media):
-    Hermes relay if running (free), Fleet API otherwise (paid)
+  - signed-cmd vehicles with Fleet enrolled -> Fleet API (all commands)
+  - signed-cmd vehicles, Fleet not enrolled, Hermes relay running -> Hermes
+    (infotainment only: charge, climate, honk, media)
   - signed-cmd vehicles, VCSEC (lock, unlock, trunk, sentry): Fleet API only
     (Hermes proxy does not support VCSEC)
-  - signed-cmd vehicles, wake_up: Fleet API (Hermes proxy has a known wake_up
-    bug)
+  - if a Fleet send fails auth and a Hermes relay is running, infotainment
+    commands automatically fall back to Hermes (auto mode only)
   - no internet path available: prints the exact tesla-control -ble recipe
 
 By default this command PRINTS the intent and exits zero ("would unlock
@@ -118,7 +121,8 @@ Use --via=auto|fleet|hermes|ble to override the picker. The router surfaces a
 clear error if the requested path is unavailable (e.g. --via=hermes for unlock
 errors out because Hermes cannot VCSEC).`,
 		Example: `  tesla-pp-cli command unlock --vehicle Snowflake --send
-  tesla-pp-cli command set_charge_limit --vehicle Snowflake --via=hermes --send -- 80
+  tesla-pp-cli command set_charge_limit --vehicle Snowflake --send -- 80
+  tesla-pp-cli command climate_on --vehicle Snowflake --via=fleet --send
   tesla-pp-cli command honk_horn --vehicle Stella`,
 		Annotations: map[string]string{
 			// KD5/OQ1: worst-case is destructive even with --send guarding the
@@ -182,15 +186,25 @@ func runCommand(cmd *cobra.Command, flags *rootFlags, name string, extraArgs []s
 		return err
 	}
 
-	// Pre-flight the picker inputs.
+	// Pre-flight the picker inputs. For auto-pick, fleetReady means "can
+	// actually dispatch" (token + key + binary). For explicit --via=fleet,
+	// PickPath always tries Fleet and lets dispatch fail with specific errors.
 	cmdClass := classifyCommand(name)
-	fleetReady := commandFleetReady(cfg)
+	fleetReady := commandFleetDispatchReady(cfg)
 	hermesRunning := commandHermesRunning()
 
 	choice, perr := PickPath(cmdClass, resolved.VehicleClass, fleetReady, hermesRunning, viaArg)
 	if perr != nil {
 		return usageErr(perr)
 	}
+
+	// Runtime auth backstop, via=auto owner-API only: offline readiness can
+	// prove a token parses and hasn't hit its exp, but revocation and
+	// signature validity are only provable by the live call. If Fleet
+	// dispatch still fails auth after its bounded refresh retry, reroute to
+	// the running Hermes relay instead of stranding the command. Explicit
+	// --via=fleet must keep erroring, so the flag is auto-mode only.
+	hermesAuthFallback := viaArg == "auto" && cmdClass == ClassOwnerAPI && hermesRunning
 
 	// Default-print: surface intent and exit zero. The whole point of KD5.
 	if !send {
@@ -210,7 +224,7 @@ func runCommand(cmd *cobra.Command, flags *rootFlags, name string, extraArgs []s
 	// --send: dispatch to the chosen transport.
 	switch choice.Path {
 	case PathFleet:
-		return commandDispatchFleet(cmd, flags, cfg, resolved, name, extraArgs, choice)
+		return commandDispatchFleet(cmd, flags, cfg, resolved, name, extraArgs, choice, hermesAuthFallback)
 	case PathHermes:
 		return commandDispatchHermes(cmd, flags, cfg, resolved, name, extraArgs, choice)
 	case PathBLE:
@@ -236,19 +250,146 @@ func runCommand(cmd *cobra.Command, flags *rootFlags, name string, extraArgs []s
 	}
 }
 
-// commandFleetReady reports whether Fleet API credentials are present and
-// usable. We treat a present access token (even if expired) as ready because
-// the caller will auto-refresh on dispatch. Empty access token means the user
-// must run fleet-login first.
-func commandFleetReady(cfg *config.Config) bool {
+// commandFleetTokenPresent reports whether any Fleet API token is configured,
+// regardless of validity. Used by --via=fleet to determine if Fleet should be
+// attempted (dispatch will surface specific auth errors if token is expired).
+func commandFleetTokenPresent(cfg *config.Config) bool {
+	if cfg == nil {
+		return false
+	}
+	if os.Getenv("TESLA_FLEET_TOKEN") != "" {
+		return true
+	}
+	ft := cfg.FleetTokens()
+	return ft.AccessToken != ""
+}
+
+// jwtExpiry extracts the exp (expiration) claim from a JWT token. Returns
+// zero time and false if the token is not a valid JWT or has no exp claim.
+func jwtExpiry(tok string) (time.Time, bool) {
+	parts := strings.Split(tok, ".")
+	if len(parts) != 3 {
+		return time.Time{}, false
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		// Tesla pads sometimes; try standard URL encoding.
+		payload, err = base64.URLEncoding.DecodeString(parts[1])
+		if err != nil {
+			return time.Time{}, false
+		}
+	}
+	var raw map[string]any
+	if jerr := json.Unmarshal(payload, &raw); jerr != nil {
+		return time.Time{}, false
+	}
+	// exp is a Unix timestamp (seconds since epoch)
+	switch v := raw["exp"].(type) {
+	case float64:
+		return time.Unix(int64(v), 0), true
+	case int64:
+		return time.Unix(v, 0), true
+	case json.Number:
+		if i, err := v.Int64(); err == nil {
+			return time.Unix(i, 0), true
+		}
+	}
+	return time.Time{}, false
+}
+
+// commandFleetRefreshCapable reports whether the stored refresh credentials
+// satisfy the refresh grant's own offline preconditions: a refresh token plus
+// a resolvable client ID (TESLA_FLEET_CLIENT_ID env var or stored client_id).
+// Kept in lockstep with tryRefreshFleetToken's precondition checks so the
+// auto-picker's readiness and the actual grant never disagree — a refresh
+// token that cannot POST the grant is not auth evidence.
+func commandFleetRefreshCapable(cfg *config.Config) bool {
 	if cfg == nil {
 		return false
 	}
 	ft := cfg.FleetTokens()
-	if os.Getenv("TESLA_FLEET_TOKEN") != "" {
+	if ft.RefreshToken == "" {
+		return false
+	}
+	return firstNonEmpty(os.Getenv("TESLA_FLEET_CLIENT_ID"), ft.ClientID) != ""
+}
+
+// commandFleetTokenUsable reports whether Fleet credentials can actually
+// authenticate. Fail-closed: a nonempty access-token string is never enough
+// on its own. Exactly three kinds of positive evidence count:
+//
+//   - the effective access token (TESLA_FLEET_TOKEN env var wins over the
+//     stored config token) is a JWT with a parseable exp claim still in the
+//     future (refresh-skew buffered), or
+//   - the stored token carries a future expiry recorded from the OAuth
+//     response at save time (covers opaque tokens minted by fleet-login), or
+//   - the refresh grant's preconditions are met (refresh token + resolvable
+//     client ID), so a fresh access token can be minted.
+//
+// Malformed, opaque, missing-exp, or expired tokens without a mintable
+// refresh grant are NOT usable; via=auto then falls back (e.g. to a running
+// Hermes relay) instead of selecting Fleet and failing auth mid-dispatch.
+// Explicit --via=fleet does not consult this predicate: it always attempts
+// Fleet and lets dispatch surface a specific auth error.
+func commandFleetTokenUsable(cfg *config.Config) bool {
+	refreshAvailable := commandFleetRefreshCapable(cfg)
+
+	// Env var token takes precedence when set. Its only freshness evidence
+	// is a parseable JWT exp claim in the future; every other shape (opaque,
+	// malformed, missing exp, expired) needs the stored refresh token.
+	if envTok := os.Getenv("TESLA_FLEET_TOKEN"); envTok != "" {
+		if exp, ok := jwtExpiry(envTok); ok && time.Now().Add(fleetTokenRefreshSkew).Before(exp) {
+			return true
+		}
+		return refreshAvailable
+	}
+
+	if cfg == nil {
+		return false
+	}
+	ft := cfg.FleetTokens()
+	if ft.AccessToken == "" {
+		// No access token at all: a stored refresh token can still mint one.
+		return refreshAvailable
+	}
+	// Prefer the token's own exp claim when it parses as a JWT.
+	if exp, ok := jwtExpiry(ft.AccessToken); ok {
+		if time.Now().Add(fleetTokenRefreshSkew).Before(exp) {
+			return true
+		}
+		return refreshAvailable
+	}
+	// Opaque stored token: the expiry recorded from the OAuth response at
+	// save time is the remaining evidence. Unknown expiry fails closed.
+	if !ft.TokenExpiry.IsZero() && time.Now().Add(fleetTokenRefreshSkew).Before(ft.TokenExpiry) {
 		return true
 	}
-	return ft.AccessToken != ""
+	return refreshAvailable
+}
+
+// commandFleetDispatchReady reports whether Fleet API can actually dispatch
+// commands. Fail-closed predicate for the via=auto picker — ALL of:
+//   - credentials that can actually authenticate (commandFleetTokenUsable),
+//   - a resolvable signing private key (same rules as dispatch),
+//   - tesla-control on PATH.
+//
+// If any leg is missing, fleetReady=false and auto may fall back to a running
+// Hermes relay (or the BLE recipe). Explicit --via=fleet bypasses this and
+// errors clearly from dispatch instead.
+func commandFleetDispatchReady(cfg *config.Config) bool {
+	// Credentials must provably authenticate (valid or refreshable).
+	if !commandFleetTokenUsable(cfg) {
+		return false
+	}
+	// Signing key must be resolvable
+	if _, err := resolveFleetKeyPath(cfg); err != nil {
+		return false
+	}
+	// tesla-control binary must be on PATH
+	if detectTeslaControlBinary() == "" {
+		return false
+	}
+	return true
 }
 
 // commandHermesRunning reports whether the local Hermes relay subprocess is
@@ -500,28 +641,57 @@ func formatAmbiguousCandidates(hits []productEntry) string {
 // the user's private key + VIN. The token file is removed in a defer; the dir
 // is mode 0o700 so the file is not group/world readable even if a future
 // mode-leak bug widens the file mode.
-func commandDispatchFleet(cmd *cobra.Command, flags *rootFlags, cfg *config.Config, v *commandResolvedVehicle, name string, extra []string, choice PathChoice) error {
+//
+// hermesAuthFallback, set only for via=auto owner-API picks with a running
+// relay, reroutes the command through Hermes when Fleet still fails auth
+// after the bounded refresh retry — the live-call backstop for token defects
+// (revoked, invalidly signed) that no offline readiness check can detect.
+func commandDispatchFleet(cmd *cobra.Command, flags *rootFlags, cfg *config.Config, v *commandResolvedVehicle, name string, extra []string, choice PathChoice, hermesAuthFallback bool) error {
 	if cfg == nil {
 		return fmt.Errorf("nil config in Fleet dispatch")
 	}
 	ft := cfg.FleetTokens()
 	token := firstNonEmpty(os.Getenv("TESLA_FLEET_TOKEN"), ft.AccessToken)
-	if token == "" {
+	if token == "" && ft.RefreshToken == "" {
 		return usageErr(fmt.Errorf("Fleet API not configured; run `tesla auth fleet-login`"))
 	}
 
 	// Proactive refresh, best-effort. Refresh when the stored token is expired,
-	// within the skew window of expiring, or has unknown expiry but a refresh
-	// token to use. The skew window matters on a sink: a freshly-synced token
-	// can be valid by local clock yet about to lapse, and refreshing before
-	// dispatch avoids racing the network. If refresh fails we still attempt the
-	// call; the reactive 401 path below is the safety net.
-	if fleetTokenNeedsProactiveRefresh(ft, fleetTokenRefreshSkew) {
+	// within the skew window of expiring, has unknown expiry but a refresh
+	// token to use, or when the config is refresh-token-only (no access token
+	// yet) — mint the first access token here so dispatch honors the same
+	// "refresh token can authenticate" contract as the auto-picker's readiness
+	// check. The skew window matters on a sink: a freshly-synced token can be
+	// valid by local clock yet about to lapse, and refreshing before dispatch
+	// avoids racing the network. If refresh fails while an access token is
+	// still in hand we attempt the call anyway (the reactive 401 path below is
+	// the safety net); with no access token at all a failed mint is fatal.
+	if token == "" || fleetTokenNeedsProactiveRefresh(ft, fleetTokenRefreshSkew) {
 		// Use the minted token whenever it is non-empty, even if persistence
 		// failed (tryRefreshFleetToken returns token+err in that case): a fresh
 		// token is usable for this dispatch regardless of the disk write.
-		if refreshed, _ := refreshFleetTokenGuarded(cfg); refreshed != "" {
+		refreshed, rerr := refreshFleetTokenGuarded(cfg)
+		if refreshed != "" {
 			token = refreshed
+		} else if token == "" {
+			if rerr == nil {
+				rerr = errors.New("token endpoint returned no access token")
+			}
+			// A failed initial mint is an auth failure — the same live-call
+			// backstop applies as for a post-dispatch 401: reroute auto-mode
+			// owner-API commands to a running Hermes relay rather than
+			// stranding a command the relay can carry.
+			if hermesAuthFallback {
+				fbChoice := PathChoice{
+					Path:   PathHermes,
+					Reason: fmt.Sprintf("Hermes fallback: Fleet initial token mint failed (%v)", rerr),
+				}
+				if ferr := commandDispatchHermes(cmd, flags, cfg, v, name, extra, fbChoice); ferr != nil {
+					return fmt.Errorf("fleet token mint failed (%v); hermes fallback failed: %w", rerr, ferr)
+				}
+				return nil
+			}
+			return usageErr(fmt.Errorf("Fleet refresh failed: %v; run `tesla auth fleet-login`", rerr))
 		}
 	}
 
@@ -584,6 +754,22 @@ func commandDispatchFleet(cmd *cobra.Command, flags *rootFlags, cfg *config.Conf
 		if newTok, _ := refreshFleetTokenGuarded(cfg); newTok != "" {
 			stdout, stderr, runErr = dispatchOnce(newTok)
 		}
+	}
+
+	// Live-call auth backstop (via=auto owner-API only): the token cleared
+	// every offline check yet Tesla rejected it — revoked or invalidly
+	// signed. A running Hermes relay can still carry this command class, so
+	// reroute instead of surfacing the auth error. Explicit --via=fleet
+	// never reaches here (hermesAuthFallback is false).
+	if runErr != nil && hermesAuthFallback && isFleetAuthError(stdout, stderr, runErr) {
+		fbChoice := PathChoice{
+			Path:   PathHermes,
+			Reason: fmt.Sprintf("Hermes fallback: Fleet auth failed after refresh retry (%v)", runErr),
+		}
+		if ferr := commandDispatchHermes(cmd, flags, cfg, v, name, extra, fbChoice); ferr != nil {
+			return fmt.Errorf("fleet auth failed (%v); hermes fallback failed: %w", runErr, ferr)
+		}
+		return nil
 	}
 
 	result := map[string]any{
@@ -804,6 +990,9 @@ func tryRefreshFleetToken(cfg *config.Config) (string, error) {
 	if cfg == nil {
 		return "", fmt.Errorf("nil cfg")
 	}
+	// Offline preconditions. Mirror any change here in
+	// commandFleetRefreshCapable, which the auto-picker uses to decide
+	// whether a refresh token counts as auth evidence.
 	ft := cfg.FleetTokens()
 	if ft.RefreshToken == "" {
 		return "", fmt.Errorf("no Fleet refresh token stored")

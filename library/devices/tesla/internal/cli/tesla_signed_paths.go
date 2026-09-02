@@ -2,10 +2,10 @@
 //
 // Given (command class, vehicle classification, available credentials, relay
 // state, --via override), PickPath returns the chosen transport plus a short
-// human-readable reason. KD6 of the 2026-05-22-001 plan governs the defaults:
-// Hermes-first for owner-api on signed-cmd vehicles (free), Fleet for VCSEC
-// (Hermes does not support lock/unlock/trunk), legacy REST for pre-VCP cars,
-// and BLE as the explicit local-only fallback.
+// human-readable reason. Fleet-first for all signed-cmd commands when Fleet is
+// enrolled (climate, charge, honk, media, VCSEC all route through Fleet).
+// Hermes is an explicit --via=hermes override for users who want the free path.
+// Legacy REST for pre-VCP cars, BLE as the explicit local-only fallback.
 //
 // This helper is reused by U5 (doctor + reachability matrix); keeping the
 // classification logic in one pure function means the user-facing decision in
@@ -112,9 +112,8 @@ func PickPath(cmdClass CommandClass, vehicleClass string, fleetReady, hermesRunn
 		case "ble":
 			return PathChoice{Path: PathBLE, Reason: "BLE override for REST-friendly vehicle: tesla-control -ble recipe"}, nil
 		case "fleet":
-			if !fleetReady {
-				return PathChoice{}, fmt.Errorf("--via=fleet requested but Fleet API not configured; run `tesla auth fleet-login`")
-			}
+			// Always try Fleet for explicit --via=fleet; dispatch validates
+			// token/key/binary and returns specific errors if missing.
 			return PathChoice{Path: PathFleet, Reason: "Fleet API override for REST-friendly vehicle"}, nil
 		case "hermes":
 			if !hermesRunning {
@@ -132,15 +131,16 @@ func PickPath(cmdClass CommandClass, vehicleClass string, fleetReady, hermesRunn
 	case "auto":
 		switch cmdClass {
 		case ClassOwnerAPI:
-			// KD6 default: Hermes-first when running (free), Fleet
-			// otherwise (paid), BLE recipe as last resort.
-			if hermesRunning {
-				return PathChoice{Path: PathHermes, Reason: "Hermes relay (free owner-API path)"}, nil
-			}
+			// Fleet-first when enrolled: it handles all owner-API commands
+			// reliably from anywhere. Hermes is an explicit --via=hermes
+			// override only (free, but limited to infotainment).
 			if fleetReady {
-				return PathChoice{Path: PathFleet, Reason: "Fleet API (Hermes relay not running)"}, nil
+				return PathChoice{Path: PathFleet, Reason: "Fleet API (default for signed commands)"}, nil
 			}
-			return PathChoice{Path: PathBLE, Reason: "BLE recipe (neither Hermes nor Fleet available)"}, nil
+			if hermesRunning {
+				return PathChoice{Path: PathHermes, Reason: "Hermes relay (Fleet not configured)"}, nil
+			}
+			return PathChoice{Path: PathBLE, Reason: "BLE recipe (neither Fleet nor Hermes available)"}, nil
 		case ClassVCSEC:
 			// Hermes proxy does NOT support VCSEC. Fleet is the only
 			// internet path; BLE is the local-only fallback.
@@ -156,9 +156,8 @@ func PickPath(cmdClass CommandClass, vehicleClass string, fleetReady, hermesRunn
 			return PathChoice{Path: PathBLE, Reason: "BLE recipe (Fleet not configured; Hermes wake_up is broken)"}, nil
 		}
 	case "fleet":
-		if !fleetReady {
-			return PathChoice{}, fmt.Errorf("--via=fleet requested but Fleet API not configured; run `tesla auth fleet-login`")
-		}
+		// Always try Fleet for explicit --via=fleet; dispatch validates
+		// token/key/binary and returns specific errors if missing.
 		return PathChoice{Path: PathFleet, Reason: "Fleet API (explicit --via=fleet)"}, nil
 	case "hermes":
 		if cmdClass == ClassVCSEC {
