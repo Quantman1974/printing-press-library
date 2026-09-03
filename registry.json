@@ -4456,9 +4456,9 @@
       "path": "library/health/clinical-trials",
       "release": {
         "cli_name": "clinical-trials-pp-cli",
-        "version": "2026.8.1",
-        "released_at": "2026-08-21T05:08:21Z",
-        "source_commit": "b919219d91c1d02e7479abf249e1bbb91cb09926"
+        "version": "2026.9.1",
+        "released_at": "2026-09-03T09:05:37Z",
+        "source_commit": "1422d2019d9b20114ad2461062a457fc7c5de1f0"
       },
       "printer": "laci141",
       "printer_name": "laci141",
@@ -8211,9 +8211,9 @@
       "path": "library/commerce/fedex",
       "release": {
         "cli_name": "fedex-pp-cli",
-        "version": "2026.8.1",
-        "released_at": "2026-08-17T07:57:07Z",
-        "source_commit": "40363ac0936c4f406625f8399d8ad9b57673170e"
+        "version": "2026.9.1",
+        "released_at": "2026-09-03T09:06:45Z",
+        "source_commit": "ef540232d9e7b16b51fb397fdc215eb6995d7e35"
       },
       "printer": "tmchow",
       "printer_name": "Trevin Chow",
@@ -10549,6 +10549,12 @@
         "FTS5 full-text search across locally synced Google Health records"
       ],
       "path": "library/devices/googlehealth",
+      "release": {
+        "cli_name": "googlehealth-pp-cli",
+        "version": "2026.9.1",
+        "released_at": "2026-09-02T20:59:14Z",
+        "source_commit": "5b10785a94e5a3ac516588033ef11c6d11676ab3"
+      },
       "printer": "coopdogGGs",
       "printer_name": "ryanc00per",
       "creator": {
@@ -17978,6 +17984,47 @@
         "auth_type": "api_key",
         "env_vars": [
           "PLANE_API_KEY_AUTHENTICATION"
+        ],
+        "mcp_ready": "full",
+        "spec_format": "openapi3"
+      }
+    },
+    {
+      "name": "plexctl",
+      "category": "media-and-entertainment",
+      "api": "Plex Media Server",
+      "description": "## Content Types The API supports responses in both XML and JSON",
+      "search_terms": [
+        "plexctl",
+        "Plex Media Server",
+        "plexctl-pp-cli",
+        "## Content Types The API supports responses in both XML and JSON",
+        "Plex monitor serve adapter",
+        "serve",
+        "Serve the preserved /plex/<account>/<server> health contract for Uptime Kuma.",
+        "Plex.tv resource refresh",
+        "Refresh Plex.tv resources per health request and match servers by stable clientIdentifier.",
+        "Bounded media health probe",
+        "Verify library metadata and read a bounded byte range from a playable media part."
+      ],
+      "path": "library/media-and-entertainment/plexctl",
+      "printer": "keithah",
+      "printer_name": "Keith Herrington",
+      "creator": {
+        "handle": "keithah",
+        "name": "Keith Anderson"
+      },
+      "mcp": {
+        "binary": "plexctl-pp-mcp",
+        "transports": [
+          "stdio",
+          "http"
+        ],
+        "tool_count": 244,
+        "public_tool_count": 1,
+        "auth_type": "api_key",
+        "env_vars": [
+          "PLEXCTL_USER_TOKEN"
         ],
         "mcp_ready": "full",
         "spec_format": "openapi3"
