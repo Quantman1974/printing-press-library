@@ -281,7 +281,7 @@ If `doctor` reports a stale or missing browser-session proof, refresh from a cur
 
 ```bash
 python3 -m pip install --user pycookiecheat  # if doctor says cookie_tool not found
-export PATH="$PATH:$HOME/go/bin:$HOME/Library/Python/3.9/bin"
+export PATH="$PATH:$HOME/go/bin:$(python3 -m site --user-base)/bin"
 amazon-orders-pp-cli auth login --chrome --no-input --yes
 amazon-orders-pp-cli doctor --agent
 ```
@@ -289,7 +289,7 @@ amazon-orders-pp-cli doctor --agent
 If new cookies were captured from Chrome and you want other headless agents to use them, update the 1Password document without printing cookie contents:
 
 ```bash
-TMP=$(mktemp -t amazon-orders-session.XXXXXX.json)
+TMP=$(mktemp "${TMPDIR:-/tmp}/amazon-orders-session.XXXXXX")
 chmod 600 "$TMP"
 amazon-orders-pp-cli auth export --output "$TMP" --note "captured $(date -u +%FT%TZ) from $(hostname)"
 op document edit 'amazon-orders-session' --vault Agent "$TMP"
