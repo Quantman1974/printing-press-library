@@ -14981,6 +14981,67 @@
       }
     },
     {
+      "name": "motogp",
+      "category": "media-and-entertainment",
+      "api": "MotoGP",
+      "description": "The first CLI and MCP server for MotoGP — human-friendly commands, offline SQLite history, and analyses no single endpoint provides.",
+      "search_terms": [
+        "motogp",
+        "motogp-pp-cli",
+        "The first CLI and MCP server for MotoGP — human-friendly commands, offline SQLite history, and analyses no single endpoint provides.",
+        "Name resolver",
+        "results",
+        "Query races by year, class name, event name, and session type instead of chained UUIDs.",
+        "Title race progression",
+        "title-race",
+        "See how championship points evolved round-by-round across a season.",
+        "Head-to-head",
+        "h2h",
+        "Compare two riders' career and season stats side by side.",
+        "Circuit history",
+        "circuit-history",
+        "List winners at a given circuit across every synced season.",
+        "Rider career timeline",
+        "career",
+        "Merge a rider's profile with career and season-by-season stats into one timeline.",
+        "Since (what did I miss)",
+        "since",
+        "Show finished events and winners for a season window.",
+        "Calendar ICS export",
+        "calendar",
+        "Export a season calendar to an ICS file from the local store.",
+        "Live timing snapshot",
+        "live",
+        "Fetch the current live-timing feed as an agent-friendly JSON snapshot."
+      ],
+      "path": "library/media-and-entertainment/motogp",
+      "release": {
+        "cli_name": "motogp-pp-cli",
+        "version": "2026.9.1",
+        "released_at": "2026-09-03T09:25:16Z",
+        "source_commit": "cf08736b97ba8e4aab4e7203f67d1f1270c695f7"
+      },
+      "printer": "waterpig0221",
+      "printer_name": "waterpig",
+      "creator": {
+        "handle": "waterpig0221",
+        "name": "waterpig"
+      },
+      "mcp": {
+        "binary": "motogp-pp-mcp",
+        "transports": [
+          "stdio",
+          "http"
+        ],
+        "tool_count": 18,
+        "public_tool_count": 18,
+        "auth_type": "none",
+        "env_vars": [],
+        "mcp_ready": "full",
+        "spec_format": "internal"
+      }
+    },
+    {
       "name": "motohunt",
       "category": "other",
       "api": "MotoHunt",
@@ -17402,6 +17463,12 @@
         "See a single fund's NAV/AUM/expense next to its benchmark index's level and top constituents, side by side."
       ],
       "path": "library/other/passive-indices",
+      "release": {
+        "cli_name": "passive-indices-pp-cli",
+        "version": "2026.9.1",
+        "released_at": "2026-09-03T09:22:15Z",
+        "source_commit": "43a5c3e313f6a85e70cf9426a9ce89ba9236dbaa"
+      },
       "printer": "lavs9",
       "printer_name": "Mayank Lavania",
       "creator": {
