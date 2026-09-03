@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "slug": "motogp",
+  "cli_name": "motogp-pp-cli",
+  "version": "2026.9.1",
+  "released_at": "2026-09-03T09:25:16Z",
+  "source_commit": "cf08736b97ba8e4aab4e7203f67d1f1270c695f7",
+  "printing_press_version": "4.29.0",
+  "run_id": "20260717-183806",
+  "changes": [
+    {
+      "title": "feat(motogp): add motogp",
+      "pr": 1531,
+      "url": "https://github.com/mvanhorn/printing-press-library/pull/1531",
+      "commit": "cf08736b97ba8e4aab4e7203f67d1f1270c695f7"
+    }
+  ]
+}
