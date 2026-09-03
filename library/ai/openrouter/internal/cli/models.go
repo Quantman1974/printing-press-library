@@ -19,7 +19,7 @@ func newModelsCmd(flags *rootFlags) *cobra.Command {
 	cmd.AddCommand(newModelsListCountCmd(flags))
 	cmd.AddCommand(newModelsListUserCmd(flags))
 	cmd.AddCommand(newModelsEndpointsCmd(flags))
-	addNovelCommandIfAbsent(cmd, newNovelModelsChurnCmd(flags))
-	addNovelCommandIfAbsent(cmd, newNovelModelsQueryCmd(flags))
+	cmd.AddCommand(newNovelModelsChurnCmd(flags))
+	cmd.AddCommand(newNovelModelsQueryCmd(flags))
 	return cmd
 }

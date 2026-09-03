@@ -24,6 +24,8 @@ import (
 	"github.com/spf13/pflag"
 )
 
+var version = "2026.8.1"
+
 type rootFlags struct {
 	asJSON        bool
 	compact       bool

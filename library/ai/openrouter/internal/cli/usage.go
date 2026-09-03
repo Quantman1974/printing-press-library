@@ -19,8 +19,8 @@ func newNovelUsageCmd(flags *rootFlags) *cobra.Command {
 		Annotations: map[string]string{"mcp:read-only": "true"},
 		RunE:        parentNoSubcommandRunE(flags),
 	}
-	addNovelCommandIfAbsent(cmd, newNovelUsageAnomalyCmd(flags))
-	addNovelCommandIfAbsent(cmd, newNovelUsageCostByCmd(flags))
-	addNovelCommandIfAbsent(cmd, newNovelUsageReconcileCmd(flags))
+	cmd.AddCommand(newNovelUsageAnomalyCmd(flags))
+	cmd.AddCommand(newNovelUsageCostByCmd(flags))
+	cmd.AddCommand(newNovelUsageReconcileCmd(flags))
 	return cmd
 }

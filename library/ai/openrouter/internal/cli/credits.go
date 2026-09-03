@@ -17,6 +17,6 @@ func newCreditsCmd(flags *rootFlags) *cobra.Command {
 
 	cmd.AddCommand(newCreditsCreateCoinbaseChargeCmd(flags))
 	cmd.AddCommand(newCreditsGetCmd(flags))
-	addNovelCommandIfAbsent(cmd, newNovelCreditsRunwayCmd(flags))
+	cmd.AddCommand(newNovelCreditsRunwayCmd(flags))
 	return cmd
 }

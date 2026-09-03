@@ -18,6 +18,6 @@ func newGenerationCmd(flags *rootFlags) *cobra.Command {
 	cmd.AddCommand(newGenerationGetCmd(flags))
 	cmd.AddCommand(newGenerationListContentCmd(flags))
 	cmd.AddCommand(newGenerationSubmitFeedbackCmd(flags))
-	addNovelCommandIfAbsent(cmd, newNovelGenerationExplainCmd(flags))
+	cmd.AddCommand(newNovelGenerationExplainCmd(flags))
 	return cmd
 }
