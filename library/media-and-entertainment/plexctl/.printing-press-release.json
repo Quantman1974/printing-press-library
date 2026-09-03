@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "slug": "plexctl",
+  "cli_name": "plexctl-pp-cli",
+  "version": "2026.9.1",
+  "released_at": "2026-09-03T09:10:50Z",
+  "source_commit": "7e3f20695075b3971d32e1bf4521b8b35c609a11",
+  "printing_press_version": "4.31.3",
+  "run_id": "20260831-212825",
+  "changes": [
+    {
+      "title": "feat(plexctl): add generated Plex monitor CLI",
+      "pr": 1903,
+      "url": "https://github.com/mvanhorn/printing-press-library/pull/1903",
+      "commit": "7e3f20695075b3971d32e1bf4521b8b35c609a11"
+    }
+  ]
+}
